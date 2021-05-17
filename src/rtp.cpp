@@ -108,7 +108,15 @@ int rtp_send_packet(rtp_packet_t *packet)
         // RTP over RTSP - we send the buffer + 4 byte additional header
         socketsend(g_rtp_session.socket_tcp, RtpBuf, RtpPacketSize + RTP_TCP_HEAD_SIZE);
     } else {
-        ESP_LOGW(TAG, "Unsupport multicast");
+        #define MULTICAST_IP        "239.255.255.11"
+        // #define MULTICAST_PORT      9832
+        struct sockaddr_in addr;
+        memset(&addr, 0, sizeof(addr));
+        inet_aton(MULTICAST_IP, &addr.sin_addr);
+        IPADDRESS otherip = addr.sin_addr.s_addr;
+        // IPPORT otherport;
+        // socketpeeraddr(g_rtp_session.socket_tcp, &otherip, &otherport);
+        udpsocketsend(g_RtpSocket, udp_buf, RtpPacketSize, otherip, g_rtp_session.rtp_port);
     }
     g_sequence_number++;
 
