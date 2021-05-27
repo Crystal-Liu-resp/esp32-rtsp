@@ -4,63 +4,69 @@
 #include "esp_log.h"
 #include "rtp.h"
 
-
 static const char *TAG = "RTP";
 
-static rtp_session_info_t g_rtp_session;
-static rtp_hdr_t g_rtphdr;
-static int g_RtpServerPort = 0;
-static int g_RtcpServerPort = 0;
-static int g_RtpSocket = NULLSOCKET;
-static int g_RtcpSocket = NULLSOCKET;
-static uint16_t g_sequence_number = 0;
+#define RTP_CHECK(a, str, ret_val)                       \
+    if (!(a))                                                     \
+    {                                                             \
+        ESP_LOGE(TAG, "%s(%d): %s", __FUNCTION__, __LINE__, str); \
+        return (ret_val);                                         \
+    }
 
-int rtp_init(rtp_session_info_t *rtp_session)
+
+rtp_session_t *rtp_session_create(rtp_session_info_t *rtp_session)
 {
-    ESP_LOGI(TAG, "Creating RTP session");
+    rtp_session_t *session = (rtp_session_t *)calloc(1, sizeof(rtp_session_t));
+    RTP_CHECK(NULL != session, "memory for RTP session is not enough", NULL);
 
+    ESP_LOGI(TAG, "Creating RTP session");
     ESP_LOGI(TAG, "transport_mode=%d", rtp_session->transport_mode);
     ESP_LOGI(TAG, "socket_tcp=%d", rtp_session->socket_tcp);
     ESP_LOGI(TAG, "rtp_port=%d", rtp_session->rtp_port);
 
-    g_rtp_session =  *rtp_session;
+    session->rtp_session =  *rtp_session;
 
-    g_rtphdr.version = RTP_VERSION;
-    g_rtphdr.p = 0;
-    g_rtphdr.x = 0;
-    g_rtphdr.cc = 0;
-    g_rtphdr.m = 0;
-    g_rtphdr.pt = 0;
-    g_rtphdr.seq = 0;
-    g_rtphdr.ts = 0;
-    g_rtphdr.ssrc = GET_RANDOM();
-    return 0;
+    session->rtphdr.version = RTP_VERSION;
+    session->rtphdr.p = 0;
+    session->rtphdr.x = 0;
+    session->rtphdr.cc = 0;
+    session->rtphdr.m = 0;
+    session->rtphdr.pt = 0;
+    session->rtphdr.seq = 0;
+    session->rtphdr.ts = 0;
+    session->rtphdr.ssrc = GET_RANDOM();
+    return session;
 }
 
-uint16_t rtp_GetRtpServerPort()
+void rtp_session_delete(rtp_session_t *session)
 {
-    return g_RtpServerPort;
-};
+    free(session);
+}
 
-uint16_t rtp_GetRtcpServerPort()
+uint16_t rtp_GetRtpServerPort(rtp_session_t *session)
 {
-    return g_RtcpServerPort;
-};
+    return session->RtpServerPort;
+}
 
-bool rtp_InitUdpTransport(void)
+uint16_t rtp_GetRtcpServerPort(rtp_session_t *session)
+{
+    return session->RtcpServerPort;
+}
+
+bool rtp_InitUdpTransport(rtp_session_t *session)
 {
     for (uint16_t P = 6970; P < 0xFFFE; P += 2) {
-        g_RtpSocket = udpsocketcreate(P);
-        if (g_RtpSocket) {
+        session->RtpSocket = udpsocketcreate(P);
+        if (session->RtpSocket) {
             // Rtp socket was bound successfully. Lets try to bind the consecutive Rtsp socket
-            g_RtcpSocket = udpsocketcreate(P + 1);
-            if (g_RtcpSocket) {
-                g_RtpServerPort = P;
-                g_RtcpServerPort = P + 1;
+            session->RtcpSocket = udpsocketcreate(P + 1);
+            if (session->RtcpSocket) {
+                session->RtpServerPort = P;
+                session->RtcpServerPort = P + 1;
                 break;
             } else {
-                udpsocketclose(g_RtpSocket);
-                udpsocketclose(g_RtcpSocket);
+                udpsocketclose(session->RtpSocket);
+                udpsocketclose(session->RtcpSocket);
             }
         }
     }
@@ -68,57 +74,59 @@ bool rtp_InitUdpTransport(void)
     return true;
 }
 
-void rtp_ReleaseUdpTransport(void)
+void rtp_ReleaseUdpTransport(rtp_session_t *session)
 {
-    g_RtpServerPort = 0;
-    g_RtcpServerPort = 0;
-    udpsocketclose(g_RtpSocket);
-    udpsocketclose(g_RtcpSocket);
+    session->RtpServerPort = 0;
+    session->RtcpServerPort = 0;
+    if (session->RtpSocket) {
+        udpsocketclose(session->RtpSocket);
+        udpsocketclose(session->RtcpSocket);
+    }
 
-    g_RtpSocket = NULLSOCKET;
-    g_RtcpSocket = NULLSOCKET;
+    session->RtpSocket = NULLSOCKET;
+    session->RtcpSocket = NULLSOCKET;
 }
 
-int rtp_send_packet(rtp_packet_t *packet)
+int rtp_send_packet(rtp_session_t *session, rtp_packet_t *packet)
 {
     int ret = -1;
     uint8_t *RtpBuf = packet->data; // Note: we assume single threaded, this large buf we keep off of the tiny stack
     uint8_t *udp_buf = RtpBuf + RTP_TCP_HEAD_SIZE;
 
     // Initialize RTP header
-    rtp_hdr_t *rtphdr = &g_rtphdr;
+    rtp_hdr_t *rtphdr = &session->rtphdr;
     rtphdr->m = packet->is_last; // RTP marker bit must be set on last fragment
     rtphdr->pt = packet->type;
-    rtphdr->seq = g_sequence_number;
+    rtphdr->seq = session->sn;
     rtphdr->ts = packet->timestamp;
     mem_swap32_copy(udp_buf, (uint8_t *)rtphdr, RTP_HEADER_SIZE);
     uint32_t RtpPacketSize = packet->size + RTP_HEADER_SIZE;
 
     // Send RTP packet
-    if (RTP_OVER_UDP == g_rtp_session.transport_mode) {
+    if (RTP_OVER_UDP == session->rtp_session.transport_mode) {
         IPADDRESS otherip;
         IPPORT otherport;
-        socketpeeraddr(g_rtp_session.socket_tcp, &otherip, &otherport);
-        udpsocketsend(g_RtpSocket, udp_buf, RtpPacketSize, otherip, g_rtp_session.rtp_port);
-    } else if (RTP_OVER_TCP == g_rtp_session.transport_mode) {
+        socketpeeraddr(session->rtp_session.socket_tcp, &otherip, &otherport);
+        udpsocketsend(session->RtpSocket, udp_buf, RtpPacketSize, otherip, session->rtp_session.rtp_port);
+    } else if (RTP_OVER_TCP == session->rtp_session.transport_mode) {
         RtpBuf[0] = '$'; // magic number
         RtpBuf[1] = 0;   // number of multiplexed subchannel on RTPS connection - here the RTP channel
         RtpBuf[2] = (RtpPacketSize & 0x0000FF00) >> 8;
         RtpBuf[3] = (RtpPacketSize & 0x000000FF);
         // RTP over RTSP - we send the buffer + 4 byte additional header
-        socketsend(g_rtp_session.socket_tcp, RtpBuf, RtpPacketSize + RTP_TCP_HEAD_SIZE);
+        socketsend(session->rtp_session.socket_tcp, RtpBuf, RtpPacketSize + RTP_TCP_HEAD_SIZE);
     } else {
-        #define MULTICAST_IP        "239.255.255.11"
+#define MULTICAST_IP        "239.255.255.11"
         // #define MULTICAST_PORT      9832
         struct sockaddr_in addr;
         memset(&addr, 0, sizeof(addr));
         inet_aton(MULTICAST_IP, &addr.sin_addr);
         IPADDRESS otherip = addr.sin_addr.s_addr;
         // IPPORT otherport;
-        // socketpeeraddr(g_rtp_session.socket_tcp, &otherip, &otherport);
-        udpsocketsend(g_RtpSocket, udp_buf, RtpPacketSize, otherip, g_rtp_session.rtp_port);
+        // socketpeeraddr(session->rtp_session.socket_tcp, &otherip, &otherport);
+        udpsocketsend(session->RtpSocket, udp_buf, RtpPacketSize, otherip, session->rtp_session.rtp_port);
     }
-    g_sequence_number++;
+    session->sn++;
 
     return ret;
 }

@@ -1,12 +1,19 @@
 
 #include <stdio.h>
 #include <string.h>
-#include "esp_log.h"
-#include "esp_timer.h"
 #include "rtp.h"
+#include "media.h"
+#include "media_stream.h"
 #include "media_mjpeg.h"
 
 static const char *TAG = "rtp_mjpeg";
+
+#define RTP_CHECK(a, str, ret_val)                       \
+    if (!(a))                                                     \
+    {                                                             \
+        ESP_LOGE(TAG, "%s(%d): %s", __FUNCTION__, __LINE__, str); \
+        return (ret_val);                                         \
+    }
 
 #define MAX_JPEG_PACKET_SIZE (MAX_RTP_PAYLOAD_SIZE - RTP_HEADER_SIZE - RTP_TCP_HEAD_SIZE)
 
@@ -18,30 +25,17 @@ static const char *TAG = "rtp_mjpeg";
 #define DQT  0xDBFF
 #define DRI  0xDDFF
 
-static uint8_t *g_rtp_buffer;
-static uint32_t g_prevMsec = 0;
-static uint32_t g_Timestamp = 0;
 
 
-int media_mjpeg_create_session(const char *stream)
+static void media_stream_mjpeg_get_description(char *buf, uint32_t buf_len, uint16_t port)
 {
-    g_rtp_buffer = (uint8_t *)malloc(MAX_RTP_PAYLOAD_SIZE);
-    if (NULL == g_rtp_buffer) {
-        ESP_LOGE(TAG, "memory for media mjpeg buffer is insufficient");
-        return ESP_ERR_NO_MEM;
-    }
-    return ESP_OK;
+    snprintf(buf, buf_len, "m=video %hu RTP/AVP %d", port, RTP_PT_JPEG);
 }
 
-int media_mjpeg_delete_session(void)
+static void media_stream_mjpeg_get_attribute(char *buf, uint32_t buf_len)
 {
-    if (NULL != g_rtp_buffer) {
-        free(g_rtp_buffer);
-        g_rtp_buffer = NULL;
-    }
-    return ESP_OK;
+    snprintf(buf, buf_len, "a=rtpmap:%d JPEG/90000", RTP_PT_JPEG);
 }
-
 
 static const uint8_t *findJPEGheader(const uint8_t *start, const uint8_t *end, uint16_t marker)
 {
@@ -77,7 +71,6 @@ static const uint8_t *findJPEGheader(const uint8_t *start, const uint8_t *end, u
 
     return NULL;
 }
-
 
 static bool decodeJPEGfile(const uint8_t **start, uint32_t *len, const uint8_t **qtable0, const uint8_t **qtable1, uint16_t *width, uint16_t *height)
 {
@@ -119,20 +112,21 @@ static bool decodeJPEGfile(const uint8_t **start, uint32_t *len, const uint8_t *
     return true;
 }
 
-
-int media_mjpeg_send_frame(const uint8_t *jpeg_data, uint32_t jpegLen, uint16_t w, uint16_t h)
+int media_stream_mjpeg_send_frame(media_stream_t *stream, const uint8_t *jpeg_data, uint32_t jpegLen)
 {
+    uint16_t w = 0;
+    uint16_t h = 0;
     uint32_t curMsec = (uint32_t)(esp_timer_get_time() / 1000);
-    if (g_prevMsec == 0) { // first frame init our timestamp
-        g_prevMsec = curMsec;
+    if (stream->prevMsec == 0) { // first frame init our timestamp
+        stream->prevMsec = curMsec;
     }
     // compute deltat (being careful to handle clock rollover with a little lie)
-    uint32_t deltams = (curMsec >= g_prevMsec) ? curMsec - g_prevMsec : 100;
-    g_prevMsec = curMsec;
+    uint32_t deltams = (curMsec >= stream->prevMsec) ? curMsec - stream->prevMsec : 100;
+    stream->prevMsec = curMsec;
 
     rtp_packet_t rtp_packet;
     rtp_packet.is_last = 0;
-    rtp_packet.data = g_rtp_buffer;
+    rtp_packet.data = stream->rtp_buffer;
 
     // locate quant tables if possible
     const uint8_t *qtable0 = NULL, *qtable1 = NULL;
@@ -190,12 +184,40 @@ int media_mjpeg_send_frame(const uint8_t *jpeg_data, uint32_t jpegLen, uint16_t 
         jpeg_bytes_left -= fragmentLen;
 
         rtp_packet.size = p_buf - mjpeg_buf;
-        rtp_packet.timestamp = g_Timestamp;
+        rtp_packet.timestamp = stream->Timestamp;
         rtp_packet.type = RTP_PT_JPEG;
-        rtp_send_packet(&rtp_packet);
+        rtp_send_packet(stream->rtp_session, &rtp_packet);
     }
     // Increment ONLY after a full frame
-    uint32_t units = 90000;                  // Hz per RFC 2435
-    g_Timestamp += (units * deltams / 1000); // fixed timestamp increment for a frame rate of 25fps
+    stream->Timestamp += (stream->clock_rate * deltams / 1000); // fixed timestamp increment for a frame rate of 25fps
     return 0;
 }
+
+static void media_stream_mjpeg_delete(media_stream_t *stream)
+{
+    if (NULL != stream->rtp_buffer) {
+        free(stream->rtp_buffer);
+    }
+    free(stream);
+}
+
+media_stream_t* media_stream_mjpeg_create(void)
+{
+    media_stream_t *stream = (media_stream_t*)calloc(1, sizeof(media_stream_t));
+    RTP_CHECK(NULL != stream, "memory for mjpeg stream is not enough", NULL);
+
+    stream->rtp_buffer = (uint8_t *)malloc(MAX_RTP_PAYLOAD_SIZE);
+    if (NULL == stream->rtp_buffer) {
+        free(stream);
+        ESP_LOGE(TAG, "memory for media mjpeg buffer is insufficient");
+        return NULL;
+    }
+    stream->clock_rate = 90000;
+    stream->delete_media = media_stream_mjpeg_delete;
+    stream->get_attribute = media_stream_mjpeg_get_attribute;
+    stream->get_channels = NULL;
+    stream->get_description = media_stream_mjpeg_get_description;
+    stream->handle_frame = media_stream_mjpeg_send_frame;
+    return stream;
+}
+

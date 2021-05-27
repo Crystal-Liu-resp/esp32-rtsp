@@ -42,22 +42,35 @@ typedef struct {
 
 } rtp_session_info_t;
 
+typedef struct {
+    rtp_session_info_t rtp_session;
+    rtp_hdr_t rtphdr;
+    int RtpServerPort;
+    int RtcpServerPort;
+    int RtpSocket;
+    int RtcpSocket;
+    uint16_t sn;
+}rtp_session_t;
+
+
 #define RTP_HEADER_SIZE        12  // size of the RTP header
 #define MAX_RTP_PAYLOAD_SIZE   1420 //1460  1500-20-12-8
 #define RTP_VERSION            2
 #define RTP_TCP_HEAD_SIZE      4
 
-int rtp_init(rtp_session_info_t *rtp_session);
 
-uint16_t rtp_GetRtpServerPort();
+rtp_session_t* rtp_session_create(rtp_session_info_t *rtp_session);
+void rtp_session_delete(rtp_session_t *session);
 
-uint16_t rtp_GetRtcpServerPort();
+uint16_t rtp_GetRtpServerPort(rtp_session_t *session);
 
-bool rtp_InitUdpTransport(void);
+uint16_t rtp_GetRtcpServerPort(rtp_session_t *session);
 
-void rtp_ReleaseUdpTransport(void);
+bool rtp_InitUdpTransport(rtp_session_t *session);
 
-int rtp_send_packet(rtp_packet_t *packet);
+void rtp_ReleaseUdpTransport(rtp_session_t *session);
+
+int rtp_send_packet(rtp_session_t *session, rtp_packet_t *packet);
 
 #ifdef __cplusplus
 }

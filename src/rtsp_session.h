@@ -1,7 +1,16 @@
 #pragma once
 
-#include "platglue.h"
-#include "rtp.h"
+#include "media_stream.h"
+
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define RTSP_BUFFER_SIZE       4096    // for incoming requests, and outgoing responses
+#define RTSP_PARAM_STRING_MAX  128
+#define MAX_HOSTNAME_LEN       128
+
 
 // supported command types
 typedef enum {
@@ -20,49 +29,47 @@ typedef enum  {
     ParseState_GotAll,
 } RtspRequestParseState;
 
-#define RTSP_BUFFER_SIZE       4096    // for incoming requests, and outgoing responses
-#define RTSP_PARAM_STRING_MAX  128
-#define MAX_HOSTNAME_LEN       128
 
-class CRtspSession {
-public:
-    CRtspSession(WiFiClient &aRtspClient);
-    ~CRtspSession();
+typedef struct {
+    media_stream_t *media_stream[2];
+    uint8_t media_stream_num;
 
-    int GetStreamID();
-    bool handleRequests(uint32_t readTimeoutMs);
+    rtp_session_t *rtp_session[2];
+    uint8_t rtp_session_num;
 
-    bool m_streaming;
-    bool m_stopped;
-
-private:
-    RTSP_CMD_TYPES Handle_RtspRequest(char const *aRequest, unsigned aRequestSize);
-    bool ParseRtspRequest(const char *aRequest, uint32_t aRequestSize);
-    bool ParseRequestLine(const char *message);
-    bool ParseHeadersLine(const char *message);
-    char const *DateHeader(char *buf, uint32_t length);
-
-    // RTSP request command handlers
-    void Handle_RtspOPTION(char *Response, uint32_t *length);
-    void Handle_RtspDESCRIBE(char *Response, uint32_t *length);
-    void Handle_RtspSETUP(char *Response, uint32_t *length);
-    void Handle_RtspPLAY(char *Response, uint32_t *length);
-
-    // global session state parameters
     int m_RtspSessionID;
-    WiFiClient m_Client;
+    SOCKET MasterSocket;                                      // our masterSocket(socket that listens for RTSP client connections)
     SOCKET m_RtspClient;                                      // RTSP socket of that session
     int m_StreamID;                                           // number of simulated stream of that session
     IPPORT m_ClientRTPPort;                                  // client port for UDP based RTP transport
     IPPORT m_ClientRTCPPort;                                 // client port for UDP based RTCP transport
-    transport_mode_t m_Transport_mode;
+    transport_mode_t transport_mode;
 
-    // parameters of the last received RTSP request
-    char RecvBuf[RTSP_BUFFER_SIZE];
+    uint8_t RecvBuf[RTSP_BUFFER_SIZE];
     RTSP_CMD_TYPES m_RtspCmdType;                             // command type (if any) of the current request
     char m_url[RTSP_PARAM_STRING_MAX];                        // stream url
     uint32_t m_CSeq;                                          // RTSP command sequence number
+    char resource_url[RTSP_PARAM_STRING_MAX];
     char m_HostPort[MAX_HOSTNAME_LEN];                        // host:port part of the URL
     char m_ip[20];
     RtspRequestParseState state_;
-};
+
+    uint8_t state;
+} rtsp_session_t;
+
+
+rtsp_session_t *rtsp_session_create(const char *url, uint16_t port);
+
+int rtsp_session_delete(rtsp_session_t *session);
+
+int rtsp_session_accept(rtsp_session_t *session);
+
+int rtsp_session_terminate(rtsp_session_t *session);
+
+int rtsp_session_add_media_stream(rtsp_session_t *session);
+
+int rtsp_handle_requests(rtsp_session_t *session, uint32_t readTimeoutMs);
+
+#ifdef __cplusplus
+}
+#endif

@@ -1,6 +1,6 @@
 
-#ifndef G711_H_
-#define G711_H_
+#ifndef _ITU_G711_H_
+#define _ITU_G711_H_
 
 #include<stdint.h>
 

@@ -1,66 +1,86 @@
 ﻿
+#include <stdio.h>
+#include <string.h>
+#include "media_stream.h"
+#include "g711.h"
+#include "media_g711a.h"
 
-#include "G711ASource.h"
-#include <cstdio>
-#include <chrono>
+static const char *TAG = "rtp_g711a";
 
+#define RTP_CHECK(a, str, ret_val)                       \
+    if (!(a))                                                     \
+    {                                                             \
+        ESP_LOGE(TAG, "%s(%d): %s", __FUNCTION__, __LINE__, str); \
+        return (ret_val);                                         \
+    }
 
-G711ASource::G711ASource()
+static media_stream_t* media_stream_g711a_create(void)
 {
-	payload_    = 8;
-	media_type_ = PCMA;
-	clock_rate_ = 8000;
+    media_stream_t *stream = (media_stream_t*)calloc(1, sizeof(media_stream_t));
+    RTP_CHECK(NULL != stream, "memory for g711a stream is not enough", NULL);
+
+    stream->rtp_buffer = (uint8_t *)malloc(MAX_RTP_PAYLOAD_SIZE);
+    if (NULL == stream->rtp_buffer) {
+        free(stream);
+        ESP_LOGE(TAG, "memory for media mjpeg buffer is insufficient");
+        return NULL;
+    }
+    stream->clock_rate = 8000;
+    return stream;
 }
 
-G711ASource* G711ASource::CreateNew()
+static void media_stream_g711a_delete(media_stream_t *stream)
 {
-    return new G711ASource();
+    if (NULL != stream->rtp_buffer) {
+        free(stream->rtp_buffer);
+    }
+    free(stream);
 }
 
-G711ASource::~G711ASource()
+/**
+ * https://datatracker.ietf.org/doc/html/rfc2327
+ * 
+ */
+void media_stream_g711a_get_description(char *buf, uint32_t buf_len, uint16_t port)
 {
-	
+    snprintf(buf, buf_len, "m=audio %hu RTP/AVP %d", port, RTP_PT_PCMA);
 }
 
-string G711ASource::GetMediaDescription(uint16_t port)
+void media_stream_g711a_get_attribute(char *buf, uint32_t buf_len)
 {
-	char buf[100] = {0};
-	sprintf(buf, "m=audio %hu RTP/AVP 8", port);
-	return string(buf);
-}
-	
-string G711ASource::GetAttribute()
-{
-    return string("a=rtpmap:8 PCMA/8000/1");
+    snprintf(buf, buf_len, "a=rtpmap:%d PCMA/8000/1", RTP_PT_PCMA);
 }
 
-bool G711ASource::HandleFrame(MediaChannelId channel_id, AVFrame frame)
+
+int media_stream_g711a_send_frame(media_stream_t *stream, const uint8_t *data, uint32_t len)
 {
-	if (frame.size > MAX_RTP_PAYLOAD_SIZE) {
-		return false;
-	}
+    if (len > MAX_RTP_PAYLOAD_SIZE) {
+        return 1;
+    }
 
-	uint8_t *frame_buf  = frame.buffer.get();
-	uint32_t frame_size = frame.size;
+    rtp_packet_t rtp_packet;
+    rtp_packet.is_last = 0;
+    rtp_packet.data = stream->rtp_buffer;
 
-	RtpPacket rtp_pkt;
-	rtp_pkt.type = frame.type;
-	rtp_pkt.timestamp = frame.timestamp;
-	rtp_pkt.size = frame_size + 4 + RTP_HEADER_SIZE;
-	rtp_pkt.last = 1;
+    uint32_t curMsec = (uint32_t)(esp_timer_get_time() / 1000);
+    if (stream->prevMsec == 0) { // first frame init our timestamp
+        stream->prevMsec = curMsec;
+    }
+    // compute deltat (being careful to handle clock rollover with a little lie)
+    uint32_t deltams = (curMsec >= stream->prevMsec) ? curMsec - stream->prevMsec : 100;
+    stream->prevMsec = curMsec;
 
-	memcpy(rtp_pkt.data.get()+4+RTP_HEADER_SIZE, frame_buf, frame_size);
+    // ALaw_Encode();
 
-	if (send_frame_callback_) {
-		send_frame_callback_(channel_id, rtp_pkt);
-	}
+    // rtp_packet.size = p_buf - mjpeg_buf;
+    rtp_packet.timestamp = stream->Timestamp;
+    rtp_packet.type = RTP_PT_JPEG;
+    rtp_send_packet(stream->rtp_session, &rtp_packet);
+    
+    // Increment ONLY after a full frame
+    stream->Timestamp += (stream->clock_rate * deltams / 1000);
 
-	return true;
+    return true;
 }
 
-uint32_t G711ASource::GetTimestamp()
-{
-	auto time_point = chrono::time_point_cast<chrono::microseconds>(chrono::steady_clock::now());
-	return (uint32_t)((time_point.time_since_epoch().count()+500)/1000*8);
-}
 

@@ -3,31 +3,18 @@
 #include <time.h>
 #include "esp_log.h"
 #include "rtsp_session.h"
+#include "media_mjpeg.h"
+
 
 static const char *TAG = "rtsp";
 
-CRtspSession::CRtspSession(WiFiClient &aClient) :
-    m_Client(aClient)
-{
-    printf("Creating RTSP session\n");
+#define RTSP_SESSION_CHECK(a, str, ret_val)                       \
+    if (!(a))                                                     \
+    {                                                             \
+        ESP_LOGE(TAG, "%s(%d): %s", __FUNCTION__, __LINE__, str); \
+        return (ret_val);                                         \
+    }
 
-    m_RtspClient = m_Client;
-    m_RtspSessionID  = GET_RANDOM() >> 16;       // create a session ID
-    m_StreamID       = -1;
-    m_ClientRTPPort  =  0;
-    m_ClientRTCPPort =  0;
-    m_Transport_mode   =  RTP_OVER_UDP;
-    m_streaming = false;
-    m_stopped = false;
-
-};
-
-CRtspSession::~CRtspSession()
-{
-    printf("Deleting RTSP session\n");
-    rtp_ReleaseUdpTransport();
-    closesocket(m_RtspClient);
-};
 
 static char *FindFirstCrlf(const char *str)
 {
@@ -40,7 +27,7 @@ static char *FindFirstCrlf(const char *str)
     return NULL;
 }
 
-bool CRtspSession::ParseRequestLine(const char *message)
+static bool ParseRequestLine(rtsp_session_t *session, const char *message)
 {
     char method[32] = {0};
     char url[128] = {0};
@@ -51,19 +38,19 @@ bool CRtspSession::ParseRequestLine(const char *message)
     }
 
     if (strstr(method, "OPTIONS")) {
-        m_RtspCmdType = RTSP_OPTIONS;
+        session->m_RtspCmdType = RTSP_OPTIONS;
     } else if (strstr(method, "DESCRIBE")) {
-        m_RtspCmdType = RTSP_DESCRIBE;
+        session->m_RtspCmdType = RTSP_DESCRIBE;
     } else if (strstr(method, "SETUP")) {
-        m_RtspCmdType = RTSP_SETUP;
+        session->m_RtspCmdType = RTSP_SETUP;
     } else if (strstr(method, "PLAY")) {
-        m_RtspCmdType = RTSP_PLAY;
+        session->m_RtspCmdType = RTSP_PLAY;
     } else if (strstr(method, "TEARDOWN")) {
-        m_RtspCmdType = RTSP_TEARDOWN;
+        session->m_RtspCmdType = RTSP_TEARDOWN;
     } else if (strstr(method, "GET_PARAMETER")) {
-        m_RtspCmdType = RTSP_GET_PARAMETER;
+        session->m_RtspCmdType = RTSP_GET_PARAMETER;
     } else {
-        m_RtspCmdType = RTSP_UNKNOWN;
+        session->m_RtspCmdType = RTSP_UNKNOWN;
         return true;
     }
 
@@ -77,119 +64,119 @@ bool CRtspSession::ParseRequestLine(const char *message)
     uint16_t port = 0;
     char suffix[64] = {0};
 
-    if (sscanf(url + 7, "%[^:]:%hu/%s", m_ip, &port, suffix) == 3) {
+    if (sscanf(url + 7, "%[^:]:%hu/%s", session->m_ip, &port, suffix) == 3) {
 
-    } else if (sscanf(url + 7, "%[^/]/%s", m_ip, suffix) == 2) {
+    } else if (sscanf(url + 7, "%[^/]/%s", session->m_ip, suffix) == 2) {
         port = 554;
     } else {
         return true;
     }
 
-    sprintf(m_HostPort, "%s:%d", m_ip, port);
-    sprintf(m_url, "%s", url);
+    sprintf(session->m_HostPort, "%s:%d", session->m_ip, port);
+    sprintf(session->m_url, "%s", url);
 
-    ESP_LOGD(TAG, "HostPort:%s", m_HostPort);
-    ESP_LOGD(TAG, "url:%s", m_url);
+    ESP_LOGD(TAG, "HostPort:%s", session->m_HostPort);
+    ESP_LOGD(TAG, "url:%s", session->m_url);
 
     return 0;
-};
+}
 
-bool CRtspSession::ParseHeadersLine(const char *message)
+static bool ParseHeadersLine(rtsp_session_t *session, const char *message)
 {
     ESP_LOGW(TAG, "<%s>", message);
     char *TmpPtr = NULL;
-    TmpPtr = strstr(message, "CSeq: ");
+    TmpPtr = (char *)strstr(message, "CSeq: ");
     if (TmpPtr) {
-        m_CSeq  = atoi(TmpPtr + 6);
+        session->m_CSeq  = atoi(TmpPtr + 6);
         return 0;
     }
 
-    if (m_RtspCmdType == RTSP_DESCRIBE || m_RtspCmdType == RTSP_SETUP || m_RtspCmdType == RTSP_PLAY) {
+    if (session->m_RtspCmdType == RTSP_DESCRIBE || session->m_RtspCmdType == RTSP_SETUP || session->m_RtspCmdType == RTSP_PLAY) {
         // ParseAuthorization(message);
     }
 
-    if (m_RtspCmdType == RTSP_OPTIONS) {
-        state_ = ParseState_GotAll;
+    if (session->m_RtspCmdType == RTSP_OPTIONS) {
+        session->state_ = ParseState_GotAll;
         return 0;
     }
 
-    if (m_RtspCmdType == RTSP_DESCRIBE) {
-        state_ = ParseState_GotAll;
+    if (session->m_RtspCmdType == RTSP_DESCRIBE) {
+        session->state_ = ParseState_GotAll;
         return 0;
     }
 
-    if (m_RtspCmdType == RTSP_SETUP) {
-        TmpPtr = strstr(message, "Transport");
+    if (session->m_RtspCmdType == RTSP_SETUP) {
+        TmpPtr = (char *)strstr(message, "Transport");
         if (TmpPtr) { // parse transport header
-            TmpPtr = strstr(TmpPtr, "RTP/AVP/TCP");
+            TmpPtr = (char *)strstr(TmpPtr, "RTP/AVP/TCP");
             if (TmpPtr) {
-                m_Transport_mode = RTP_OVER_TCP;
+                session->transport_mode = RTP_OVER_TCP;
             } else {
-                m_Transport_mode = RTP_OVER_UDP;
+                session->transport_mode = RTP_OVER_UDP;
             }
 
-            TmpPtr = strstr(message, "multicast");
+            TmpPtr = (char *)strstr(message, "multicast");
             if (TmpPtr) {
-                m_Transport_mode = RTP_OVER_MULTICAST;
+                session->transport_mode = RTP_OVER_MULTICAST;
                 ESP_LOGD(TAG, "multicast");
             } else {
                 ESP_LOGD(TAG, "unicast");
             }
 
             char *ClientPortPtr = NULL;
-            if (RTP_OVER_UDP == m_Transport_mode) {
-                ClientPortPtr = strstr(message, "client_port=");
-            } else if (RTP_OVER_MULTICAST == m_Transport_mode) {
-                ClientPortPtr = strstr(message, "port=");
+            if (RTP_OVER_UDP == session->transport_mode) {
+                ClientPortPtr = (char *)strstr(message, "client_port=");
+            } else if (RTP_OVER_MULTICAST == session->transport_mode) {
+                ClientPortPtr = (char *)strstr(message, "port=");
             }
             if (ClientPortPtr) {
-                ClientPortPtr += (RTP_OVER_UDP == m_Transport_mode) ? 12 : 5;
+                ClientPortPtr += (RTP_OVER_UDP == session->transport_mode) ? 12 : 5;
                 char cp[16] = {0};
                 char *p = strchr(ClientPortPtr, '-');
                 if (p) {
                     strncpy(cp, ClientPortPtr, p - ClientPortPtr);
-                    m_ClientRTPPort  = atoi(cp);
-                    m_ClientRTCPPort = m_ClientRTPPort + 1;
-                    ESP_LOGI(TAG, "rtsp client port %d-%d", m_ClientRTPPort, m_ClientRTCPPort);
+                    session->m_ClientRTPPort  = atoi(cp);
+                    session->m_ClientRTCPPort = session->m_ClientRTPPort + 1;
+                    ESP_LOGI(TAG, "rtsp client port %d-%d", session->m_ClientRTPPort, session->m_ClientRTCPPort);
                 } else {
                     return 1;
                 }
             }
 
-            if (RTP_OVER_TCP == m_Transport_mode) {
-                TmpPtr = strstr(message, "interleaved=");
+            if (RTP_OVER_TCP == session->transport_mode) {
+                TmpPtr = (char *)strstr(message, "interleaved=");
                 if (TmpPtr) {
                     int RTP_channel, RTCP_channel;
                     if (sscanf(TmpPtr += 12, "%d-%d", &RTP_channel, &RTCP_channel) == 2) {
                         ESP_LOGI(TAG, "RTP channel=%d, RTCP channel=%d", RTP_channel, RTCP_channel);
-                    }                
+                    }
                 }
             }
 
-            state_ = ParseState_GotAll;
+            session->state_ = ParseState_GotAll;
         }
         return 0;
     }
 
-    if (m_RtspCmdType == RTSP_PLAY) {
-        state_ = ParseState_GotAll;
+    if (session->m_RtspCmdType == RTSP_PLAY) {
+        session->state_ = ParseState_GotAll;
         return 0;
     }
 
-    if (m_RtspCmdType == RTSP_TEARDOWN) {
-        state_ = ParseState_GotAll;
+    if (session->m_RtspCmdType == RTSP_TEARDOWN) {
+        session->state_ = ParseState_GotAll;
         return 0;
     }
 
-    if (m_RtspCmdType == RTSP_GET_PARAMETER) {
-        state_ = ParseState_GotAll;
+    if (session->m_RtspCmdType == RTSP_GET_PARAMETER) {
+        session->state_ = ParseState_GotAll;
         return 0;
     }
 
     return 1;
-};
+}
 
-bool CRtspSession::ParseRtspRequest(const char *aRequest, uint32_t aRequestSize)
+static bool ParseRtspRequest(rtsp_session_t *session, const char *aRequest, uint32_t aRequestSize)
 {
     printf("[%s]\n", aRequest);
     if (aRequestSize < 5) {
@@ -197,31 +184,31 @@ bool CRtspSession::ParseRtspRequest(const char *aRequest, uint32_t aRequestSize)
     }
 
     if (aRequest[0] == '$') {
-        m_RtspCmdType   = RTSP_UNKNOWN;
+        session->m_RtspCmdType   = RTSP_UNKNOWN;
         return true;
     }
 
-    m_RtspCmdType   = RTSP_UNKNOWN;
-    m_CSeq = 0;
-    memset(m_url, 0x00, sizeof(m_url));
-    memset(m_HostPort, 0x00, sizeof(m_HostPort));
-    state_ = ParseState_RequestLine;
+    session->m_RtspCmdType   = RTSP_UNKNOWN;
+    session->m_CSeq = 0;
+    memset(session->m_url, 0x00, sizeof(session->m_url));
+    memset(session->m_HostPort, 0x00, sizeof(session->m_HostPort));
+    session->state_ = ParseState_RequestLine;
 
     bool ret = 0;
     char *string = (char *)aRequest;
     char const *end = string + aRequestSize;
     while (string < end) {
-        switch (state_) {
+        switch (session->state_) {
         case ParseState_RequestLine: {
             char *firstCrlf = FindFirstCrlf((const char *)string);
             if (firstCrlf != nullptr) {
                 firstCrlf[0] = '\0';
-                ret = ParseRequestLine(string);
+                ret = ParseRequestLine(session, string);
                 string = firstCrlf + 2;
             }
 
             if (0 == ret) {
-                state_ = ParseState_HeadersLine;
+                session->state_ = ParseState_HeadersLine;
             } else {
                 ESP_LOGE(TAG, "rtsp request parse failed");
                 string = (char *)end;
@@ -232,7 +219,7 @@ bool CRtspSession::ParseRtspRequest(const char *aRequest, uint32_t aRequestSize)
             char *firstCrlf = FindFirstCrlf((const char *)string);
             if (firstCrlf != nullptr) {
                 firstCrlf[0] = '\0';
-                ret = ParseHeadersLine(string);
+                ret = ParseHeadersLine(session, string);
                 string = firstCrlf + 2;
             } else {
                 string = (char *)end;
@@ -250,78 +237,91 @@ bool CRtspSession::ParseRtspRequest(const char *aRequest, uint32_t aRequestSize)
     }
 
     return true;
-};
+}
 
-RTSP_CMD_TYPES CRtspSession::Handle_RtspRequest(char const *aRequest, unsigned aRequestSize)
+static char const *DateHeader(char *buf, uint32_t length)
 {
-    if (ParseRtspRequest(aRequest, aRequestSize)) {
-        char *response = (char *)aRequest;
-        uint32_t length = RTSP_BUFFER_SIZE;
-        switch (m_RtspCmdType) {
-        case RTSP_OPTIONS:  {
-            Handle_RtspOPTION(response, &length);
-            break;
-        };
-        case RTSP_DESCRIBE: {
-            Handle_RtspDESCRIBE(response, &length);
-            break;
-        };
-        case RTSP_SETUP:    {
-            Handle_RtspSETUP(response, &length);
-            break;
-        };
-        case RTSP_PLAY:     {
-            Handle_RtspPLAY(response, &length);
-            break;
-        };
-        default: {};
-        };
-        socketsend(m_RtspClient, response, length);
-    };
-    return m_RtspCmdType;
-};
+    time_t tt = time(NULL);
+    strftime(buf, length, "Date: %a, %b %d %Y %H:%M:%S GMT", gmtime(&tt));
+    return buf;
+}
 
-void CRtspSession::Handle_RtspOPTION(char *Response, uint32_t *length)
+static void Handle_RtspOPTION(rtsp_session_t *session, char *Response, uint32_t *length)
 {
     int len = snprintf(Response, *length,
                        "RTSP/1.0 200 OK\r\nCSeq: %u\r\n"
-                       "Public: DESCRIBE, SETUP, TEARDOWN, PLAY, PAUSE\r\n\r\n", m_CSeq);
+                       "Public: DESCRIBE, SETUP, TEARDOWN, PLAY, PAUSE\r\n\r\n", session->m_CSeq);
     if (len > 0) {
         *length = len;
     }
 }
 
-void CRtspSession::Handle_RtspDESCRIBE(char *Response, uint32_t *length)
+static void GetSdpMessage(rtsp_session_t *session, char *buf, uint32_t buf_len, const char *session_name)
+{
+    snprintf(buf, buf_len,
+             "v=0\r\n"
+             "o=- 9%u 1 IN IP4 %s\r\n" //o=<username> <session id> <version> <network type> <address type> <address>
+             "t=0 0\r\n"
+             "a=control:*\r\n",
+             GET_RANDOM(), session->m_ip);
+
+    if (session_name) {
+        snprintf(buf + strlen(buf), buf_len - strlen(buf),
+                 "s=%s\r\n",
+                 session_name);
+    }
+
+    if (RTP_OVER_MULTICAST == session->transport_mode) {
+        snprintf(buf + strlen(buf), buf_len - strlen(buf),
+                 "a=type:broadcast\r\n"
+                 "a=rtcp-unicast: reflection\r\n");
+    }
+
+    char str_buf[128];
+    for (uint32_t chn = 0; chn < session->media_stream_num; chn++) {
+        if (RTP_OVER_MULTICAST == session->transport_mode) {
+            session->media_stream[chn]->get_description(str_buf, sizeof(str_buf), 0);
+            snprintf(buf + strlen(buf), buf_len - strlen(buf),
+                     "%s\r\n", str_buf);
+
+            snprintf(buf + strlen(buf), buf_len - strlen(buf),
+                     "c=IN IP4 %s/255\r\n", "0.0.0.0"/*multicast_ip_.c_str()*/);
+        } else {
+            session->media_stream[chn]->get_description(str_buf, sizeof(str_buf), 0);
+            snprintf(buf + strlen(buf), buf_len - strlen(buf),
+                     "%s\r\n", str_buf);
+        }
+
+        session->media_stream[chn]->get_attribute(str_buf, sizeof(str_buf));
+        snprintf(buf + strlen(buf), buf_len - strlen(buf),
+                 "%s\r\n", str_buf);
+        snprintf(buf + strlen(buf), buf_len - strlen(buf),
+                 "a=control:track%d\r\n", chn);
+    }
+}
+
+static void Handle_RtspDESCRIBE(rtsp_session_t *session, char *Response, uint32_t *length)
 {
     char time_str[64];
-    m_StreamID = -1;        // invalid URL
-    if (strstr(m_url, "mjpeg/1")) {
-        m_StreamID = 0;
-    } else if (strstr(m_url, "mjpeg/2")) {
-        m_StreamID = 1;
+    session->m_StreamID = -1;        // invalid URL
+    if (strstr(session->m_url, session->resource_url)) {
+        session->m_StreamID = 0;
     }
-    if (m_StreamID == -1) {
-        ESP_LOGI(TAG, "Stream Not Found");
+
+    if (session->m_StreamID == -1) {
+        ESP_LOGE(TAG, "[%s] Stream Not Found", session->m_url);
         // Stream not available
         snprintf(Response, *length,
                  "RTSP/1.0 404 Stream Not Found\r\nCSeq: %u\r\n%s\r\n",
-                 m_CSeq,
+                 session->m_CSeq,
                  DateHeader(time_str, sizeof(time_str)));
 
-        socketsend(m_RtspClient, Response, strlen(Response));
+        socketsend(session->m_RtspClient, Response, strlen(Response));
         return;
     };
 
-    char SDPBuf[128];
-    snprintf(SDPBuf, sizeof(SDPBuf),
-             "v=0\r\n"
-             "o=- %d 1 IN IP4 %s\r\n"
-             "s=\r\n"
-             "t=0 0\r\n"                          // start / stop - 0 -> unbounded and permanent session
-             "m=video 0 RTP/AVP 26\r\n"           // currently we just handle UDP sessions
-             "c=IN IP4 0.0.0.0\r\n",
-             rand(),
-             m_ip);
+    char SDPBuf[256];
+    GetSdpMessage(session, SDPBuf, sizeof(SDPBuf), NULL);
     int len = snprintf(Response, *length,
                        "RTSP/1.0 200 OK\r\nCSeq: %u\r\n"
                        "%s\r\n"
@@ -329,9 +329,9 @@ void CRtspSession::Handle_RtspDESCRIBE(char *Response, uint32_t *length)
                        "Content-Type: application/sdp\r\n"
                        "Content-Length: %d\r\n\r\n"
                        "%s",
-                       m_CSeq,
+                       session->m_CSeq,
                        DateHeader(time_str, sizeof(time_str)),
-                       m_url,
+                       session->m_url,
                        (int) strlen(SDPBuf),
                        SDPBuf);
 
@@ -340,49 +340,51 @@ void CRtspSession::Handle_RtspDESCRIBE(char *Response, uint32_t *length)
     }
 }
 
-void CRtspSession::Handle_RtspSETUP(char *Response, uint32_t *length)
+static void Handle_RtspSETUP(rtsp_session_t *session, char *Response, uint32_t *length)
 {
-    // init RTSP Session transport type (UDP or TCP) and ports for UDP transport
-    if (!m_Transport_mode) {
-        // allocate port pairs for RTP/RTCP ports in UDP transport mode
-        rtp_InitUdpTransport();
-    }
 
     rtp_session_info_t rtp_session = {
-        .transport_mode = m_Transport_mode,
-        .socket_tcp = m_RtspClient,
-        .rtp_port = m_ClientRTPPort,
+        .transport_mode = session->transport_mode,
+        .socket_tcp = session->m_RtspClient,
+        .rtp_port = session->m_ClientRTPPort,
     };
-    rtp_init(&rtp_session);
+    session->rtp_session[0] = rtp_session_create(&rtp_session);
+    session->media_stream[0]->rtp_session = session->rtp_session[0];
+
+    // init RTSP Session transport type (UDP or TCP) and ports for UDP transport
+    if (RTP_OVER_UDP == session->transport_mode) {
+        // allocate port pairs for RTP/RTCP ports in UDP transport mode
+        rtp_InitUdpTransport(session->rtp_session[0]);
+    }
 
     char Transport[128];
     char time_str[64];
-    if (m_Transport_mode) {
+    if (RTP_OVER_TCP == session->transport_mode) {
         snprintf(Transport, sizeof(Transport), "RTP/AVP/TCP;unicast;interleaved=0-1");
     } else {
         snprintf(Transport, sizeof(Transport),
                  "RTP/AVP;unicast;client_port=%i-%i;server_port=%i-%i",
-                 m_ClientRTPPort,
-                 m_ClientRTCPPort,
-                 rtp_GetRtpServerPort(),
-                 rtp_GetRtcpServerPort());
+                 session->m_ClientRTPPort,
+                 session->m_ClientRTCPPort,
+                 rtp_GetRtpServerPort(session->rtp_session[0]),
+                 rtp_GetRtcpServerPort(session->rtp_session[0]));
     }
     int len = snprintf(Response, *length,
                        "RTSP/1.0 200 OK\r\nCSeq: %u\r\n"
                        "%s\r\n"
                        "Transport: %s\r\n"
                        "Session: %i\r\n\r\n",
-                       m_CSeq,
+                       session->m_CSeq,
                        DateHeader(time_str, sizeof(time_str)),
                        Transport,
-                       m_RtspSessionID);
+                       session->m_RtspSessionID);
 
     if (len > 0) {
         *length = len;
     }
 }
 
-void CRtspSession::Handle_RtspPLAY(char *Response, uint32_t *length)
+static void Handle_RtspPLAY(rtsp_session_t *session, char *Response, uint32_t *length)
 {
     char time_str[64];
     int len = snprintf(Response, *length,
@@ -391,54 +393,137 @@ void CRtspSession::Handle_RtspPLAY(char *Response, uint32_t *length)
                        "Range: npt=0.000-\r\n"
                        "Session: %i\r\n"
                        "\r\n",
-                       m_CSeq,
+                       session->m_CSeq,
                        DateHeader(time_str, sizeof(time_str)),
-                       m_RtspSessionID);
+                       session->m_RtspSessionID);
     if (len > 0) {
         *length = len;
     }
 }
 
-char const *CRtspSession::DateHeader(char *buf, uint32_t length)
+rtsp_session_t *rtsp_session_create(const char *url, uint16_t port)
 {
-    time_t tt = time(NULL);
-    strftime(buf, length, "Date: %a, %b %d %Y %H:%M:%S GMT", gmtime(&tt));
-    return buf;
+    rtsp_session_t *session = (rtsp_session_t *)calloc(1, sizeof(rtsp_session_t));
+    RTSP_SESSION_CHECK(NULL != session, "memory for rtsp session is not enough", NULL);
+
+    ESP_LOGI(TAG, "Creating RTSP session\n");
+    strcpy(session->resource_url, url);
+
+    sockaddr_in ServerAddr;                                 // server address parameters
+    ServerAddr.sin_family      = AF_INET;
+    ServerAddr.sin_addr.s_addr = INADDR_ANY;
+    ServerAddr.sin_port        = htons((0 == port) ? 554 : port); // listen on RTSP port
+    session->MasterSocket      = socket(AF_INET, SOCK_STREAM, 0);
+
+    int enable = 1;
+    if (setsockopt(session->MasterSocket, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0) {
+        ESP_LOGE(TAG, "setsockopt(SO_REUSEADDR) failed");
+        free(session);
+        return NULL;
+    }
+
+    // bind our master socket to the RTSP port and listen for a client connection
+    if (bind(session->MasterSocket, (sockaddr *)&ServerAddr, sizeof(ServerAddr)) != 0) {
+        ESP_LOGE(TAG, "error can't bind port errno=%d", errno);
+        free(session);
+        return NULL;
+    }
+    if (listen(session->MasterSocket, 5) != 0) {
+        ESP_LOGE(TAG, "error can't listen socket errno=%d", errno);
+        free(session);
+        return NULL;
+    }
+
+    session->m_RtspSessionID  = GET_RANDOM() >> 16;       // create a session ID
+    session->m_StreamID       = -1;
+    session->m_ClientRTPPort  =  0;
+    session->m_ClientRTCPPort =  0;
+    session->transport_mode =  RTP_OVER_UDP;
+    session->state = 0;
+    return session;
 }
 
-int CRtspSession::GetStreamID()
+
+int rtsp_session_delete(rtsp_session_t *session)
 {
-    return m_StreamID;
-};
+    for (uint32_t chn = 0; chn < session->media_stream_num; chn++) {
+        session->media_stream[chn]->delete_media(session->media_stream[chn]);
+    }
+    closesocket(session->MasterSocket);
+    free(session);
+    return 0;
+}
+
+int rtsp_session_accept(rtsp_session_t *session)
+{
+    sockaddr_in ClientAddr;                                   // address parameters of a new RTSP client
+    socklen_t ClientAddrLen = sizeof(ClientAddr);
+    session->m_RtspClient = accept(session->MasterSocket, (struct sockaddr *)&ClientAddr, &ClientAddrLen);
+    session->state |= 0x01;
+    ESP_LOGI(TAG, "Client connected. Client address: %s\r\n", inet_ntoa(ClientAddr.sin_addr));
+    return 0;
+}
+
+int rtsp_session_terminate(rtsp_session_t *session)
+{
+    ESP_LOGI(TAG, "closing RTSP session");
+    if (session->rtp_session[0]) {
+        rtp_ReleaseUdpTransport(session->rtp_session[0]);
+        rtp_session_delete(session->rtp_session[0]);
+    }
+    closesocket(session->m_RtspClient);
+    return 0;
+}
+
+int rtsp_session_add_media_stream(rtsp_session_t *session)
+{
+    session->media_stream[0] = media_stream_mjpeg_create();
+    session->media_stream_num++;
+    return 0;
+}
 
 /**
    Read from our socket, parsing commands as possible.
  */
-bool CRtspSession::handleRequests(uint32_t readTimeoutMs)
+int rtsp_handle_requests(rtsp_session_t *session, uint32_t readTimeoutMs)
 {
-    if (m_stopped) {
-        return false;    // Already closed down
+    if (!(session->state & 0x01)) {
+        return -1;    // Already closed down
     }
-
-    memset(RecvBuf, 0x00, RTSP_BUFFER_SIZE);
-    int res = socketread(m_RtspClient, RecvBuf, RTSP_BUFFER_SIZE, readTimeoutMs);
+    char *buffer = (char *)session->RecvBuf;
+    memset(buffer, 0x00, RTSP_BUFFER_SIZE);
+    int res = socketread(session->m_RtspClient, buffer, RTSP_BUFFER_SIZE, readTimeoutMs);
     if (res > 0) {
-        RTSP_CMD_TYPES C = Handle_RtspRequest(RecvBuf, res);
-        if (C == RTSP_PLAY) {
-            m_streaming = true;
-        } else if (C == RTSP_TEARDOWN) {
-            m_stopped = true;
-            m_streaming = false;
+        if (ParseRtspRequest(session, buffer, res)) {
+            uint32_t length = RTSP_BUFFER_SIZE;
+            switch (session->m_RtspCmdType) {
+            case RTSP_OPTIONS: Handle_RtspOPTION(session, buffer, &length);
+                break;
+
+            case RTSP_DESCRIBE: Handle_RtspDESCRIBE(session, buffer, &length);
+                break;
+
+            case RTSP_SETUP: Handle_RtspSETUP(session, buffer, &length);
+                break;
+
+            case RTSP_PLAY: Handle_RtspPLAY(session, buffer, &length);
+                break;
+
+            default: break;
+            }
+            socketsend(session->m_RtspClient, buffer, length);
         }
-
-        return true;
+        if (session->m_RtspCmdType == RTSP_PLAY) {
+            session->state |= 0x02;
+        } else if (session->m_RtspCmdType == RTSP_TEARDOWN) {
+            session->state &= ~(0x02);
+        }
     } else if (res == 0) {
-        printf("client closed socket, exiting\n");
-        m_stopped = true;
-        return true;
+        ESP_LOGI(TAG, "client closed socket, exiting");
+        session->state = 0;
+        return -3;
     } else  {
-        // Timeout on read
-
-        return false;
+        return -2;
     }
+    return 0;
 }

@@ -1,7 +1,8 @@
 
-#pragma once
+#ifndef _MEDIA_MJPEG_H_
+#define _MEDIA_MJPEG_H_
 
-#include "media.h"
+#include "media_stream.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -37,11 +38,10 @@ typedef struct
     uint32_t mbz : 8;
 } jpeghdr_qtable_t;
 
-int media_mjpeg_create_session(const char *stream);
-int media_mjpeg_delete_session(void);
-
-int media_mjpeg_send_frame(const uint8_t *jpeg_data, uint32_t jpegLen, uint16_t w, uint16_t h);
+media_stream_t* media_stream_mjpeg_create(void);
 
 #ifdef __cplusplus
 }
+#endif
+
 #endif
