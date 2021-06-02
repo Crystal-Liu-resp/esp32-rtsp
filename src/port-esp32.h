@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 #include "esp_log.h"
 #include "esp_timer.h"
+#include "esp_wifi.h"
 #include <unistd.h>
 
 #ifdef __cplusplus

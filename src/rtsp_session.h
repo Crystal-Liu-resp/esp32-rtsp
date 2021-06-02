@@ -47,6 +47,8 @@ typedef struct {
     IPPORT m_ClientRTPPort;                                  // client port for UDP based RTP transport
     IPPORT m_ClientRTCPPort;                                 // client port for UDP based RTCP transport
     transport_mode_t transport_mode;
+    uint16_t RTP_channel;
+    uint16_t RTCP_channel;
 
     uint8_t RecvBuf[RTSP_BUFFER_SIZE];
     RTSP_CMD_TYPES m_RtspCmdType;                             // command type (if any) of the current request

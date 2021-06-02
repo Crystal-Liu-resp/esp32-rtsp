@@ -131,7 +131,7 @@ int media_stream_mjpeg_send_frame(media_stream_t *stream, const uint8_t *jpeg_da
     const uint8_t *qtable0 = NULL, *qtable1 = NULL;
     if (!decodeJPEGfile(&jpeg_data, &jpegLen, &qtable0, &qtable1, &w, &h)) {
         ESP_LOGW(TAG, "can't decode jpeg data");
-        return -1;
+        // return -1;
     }
 
     uint8_t q = (qtable0 && qtable1) ? 128 : 0x5e;

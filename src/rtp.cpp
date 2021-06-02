@@ -129,7 +129,7 @@ int rtp_send_packet(rtp_session_t *session, rtp_packet_t *packet)
         udpsocketsend(session->RtpSocket, udp_buf, RtpPacketSize, otherip, session->session_info.rtp_port);
     } else if (RTP_OVER_TCP == session->session_info.transport_mode) {
         RtpBuf[0] = '$'; // magic number
-        RtpBuf[1] = 0;   // number of multiplexed subchannel on RTPS connection - here the RTP channel
+        RtpBuf[1] = session->session_info.rtsp_channel;   // number of multiplexed subchannel on RTPS connection - here the RTP channel
         RtpBuf[2] = (RtpPacketSize & 0x0000FF00) >> 8;
         RtpBuf[3] = (RtpPacketSize & 0x000000FF);
         // RTP over RTSP - we send the buffer + 4 byte additional header

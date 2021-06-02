@@ -27,7 +27,7 @@ void media_stream_l16_get_attribute(media_stream_t *stream, char *buf, uint32_t 
 {
     snprintf(buf, buf_len, 
     "a=rtpmap:%d L16/%hu/1\r\n"
-    "a=framerate:100\r\n",
+    "a=framerate:100", // There should be no "\r\n" in the end
     RTP_PT_L16_CH1, stream->sample_rate);
 }
 

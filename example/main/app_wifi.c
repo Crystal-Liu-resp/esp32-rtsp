@@ -52,6 +52,14 @@
 static const char *TAG = "camera wifi";
 
 static int s_retry_num = 0;
+/* FreeRTOS event group to signal when we are connected*/
+static EventGroupHandle_t s_wifi_event_group;
+
+/* The event group allows multiple bits for each event, but we only care about two events:
+ * - we are connected to the AP with an IP
+ * - we failed to connect after the maximum amount of retries */
+#define WIFI_CONNECTED_BIT BIT0
+#define WIFI_FAIL_BIT      BIT1
 
 static esp_err_t event_handler(void *ctx, system_event_t *event)
 {
@@ -73,6 +81,7 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
         ESP_LOGI(TAG, "got ip:%s",
                  ip4addr_ntoa(&event->event_info.got_ip.ip_info.ip));
         s_retry_num = 0;
+        xEventGroupSetBits(s_wifi_event_group, WIFI_CONNECTED_BIT);
         break;
     case SYSTEM_EVENT_STA_DISCONNECTED:
         {
@@ -80,6 +89,8 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
                 esp_wifi_connect();
                 s_retry_num++;
                 ESP_LOGI(TAG,"retry to connect to the AP");
+            } else {
+                xEventGroupSetBits(s_wifi_event_group, WIFI_FAIL_BIT);
             }
             ESP_LOGI(TAG,"connect to the AP fail");
             break;
@@ -166,6 +177,8 @@ void app_wifi_main()
         return;
     }
 
+    s_wifi_event_group = xEventGroupCreate();
+
     tcpip_adapter_init();
     ESP_ERROR_CHECK(esp_event_loop_init(event_handler, NULL));
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
@@ -180,4 +193,12 @@ void app_wifi_main()
     }
     ESP_ERROR_CHECK(esp_wifi_start());
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
+    ESP_LOGI(TAG, "wifi_init_sta finished.");
+
+    EventBits_t bits = xEventGroupWaitBits(s_wifi_event_group,
+            WIFI_CONNECTED_BIT | WIFI_FAIL_BIT,
+            pdFALSE,
+            pdFALSE,
+            portMAX_DELAY);
+    vEventGroupDelete(s_wifi_event_group);
 }

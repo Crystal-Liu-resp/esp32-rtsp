@@ -141,9 +141,8 @@ static bool ParseHeadersLine(rtsp_session_t *session, const char *message)
             if (RTP_OVER_TCP == session->transport_mode) {
                 TmpPtr = (char *)strstr(message, "interleaved=");
                 if (TmpPtr) {
-                    int RTP_channel, RTCP_channel;
-                    if (sscanf(TmpPtr += 12, "%d-%d", &RTP_channel, &RTCP_channel) == 2) {
-                        ESP_LOGI(TAG, "RTP channel=%d, RTCP channel=%d", RTP_channel, RTCP_channel);
+                    if (sscanf(TmpPtr += 12, "%hu-%hu", &session->RTP_channel, &session->RTCP_channel) == 2) {
+                        ESP_LOGI(TAG, "RTP channel=%d, RTCP channel=%d", session->RTP_channel, session->RTCP_channel);
                     }
                 }
             }
@@ -353,6 +352,7 @@ static void Handle_RtspSETUP(rtsp_session_t *session, char *Response, uint32_t *
         .transport_mode = session->transport_mode,
         .socket_tcp = session->m_RtspClient,
         .rtp_port = session->m_ClientRTPPort,
+        .rtsp_channel = session->RTP_channel,
     };
     media_streams_t *it;
     SLIST_FOREACH(it, &session->media_list, next) {
@@ -365,7 +365,7 @@ static void Handle_RtspSETUP(rtsp_session_t *session, char *Response, uint32_t *
     char Transport[128];
     char time_str[64];
     if (RTP_OVER_TCP == session->transport_mode) {
-        snprintf(Transport, sizeof(Transport), "RTP/AVP/TCP;unicast;interleaved=0-1");
+        snprintf(Transport, sizeof(Transport), "RTP/AVP/TCP;unicast;interleaved=%i-%i", session->RTP_channel, session->RTCP_channel);
     } else {
         snprintf(Transport, sizeof(Transport),
                  "RTP/AVP;unicast;client_port=%i-%i;server_port=%i-%i",
@@ -411,14 +411,20 @@ rtsp_session_t *rtsp_session_create(const char *url, uint16_t port)
     rtsp_session_t *session = (rtsp_session_t *)calloc(1, sizeof(rtsp_session_t));
     RTSP_SESSION_CHECK(NULL != session, "memory for rtsp session is not enough", NULL);
 
-    ESP_LOGI(TAG, "Creating RTSP session\n");
     strcpy(session->resource_url, url);
+    port = (0 == port) ? 554 : port;
 
     sockaddr_in ServerAddr;                                 // server address parameters
     ServerAddr.sin_family      = AF_INET;
     ServerAddr.sin_addr.s_addr = INADDR_ANY;
-    ServerAddr.sin_port        = htons((0 == port) ? 554 : port); // listen on RTSP port
+    ServerAddr.sin_port        = htons(port); // listen on RTSP port
     session->MasterSocket      = socket(AF_INET, SOCK_STREAM, 0);
+
+    tcpip_adapter_ip_info_t if_ip_info;
+    char ip_str[64] = {0};
+    tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_STA, &if_ip_info);
+    sprintf(ip_str, "rtsp://%d.%d.%d.%d", IP2STR(&if_ip_info.ip));
+    ESP_LOGI(TAG, "Creating RTSP session [%s:%hu/%s]", ip_str, port, url);
 
     int enable = 1;
     if (setsockopt(session->MasterSocket, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0) {

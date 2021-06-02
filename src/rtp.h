@@ -39,6 +39,7 @@ typedef struct {
     transport_mode_t transport_mode;
     SOCKET socket_tcp;// tcp
     uint16_t rtp_port;// udp
+    uint16_t rtsp_channel; //channel for rtsp over tcp
 
 } rtp_session_info_t;
 

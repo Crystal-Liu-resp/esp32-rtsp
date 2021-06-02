@@ -70,7 +70,6 @@ static void streamaudio(media_stream_t *audio_stream)
             for (size_t i = 0; i < len; i++) {
                 buffer[i] = linear2alaw(pcm[i]);
             }
-            printf("audio %p %d\n", audio_p, len);
             audio_stream->handle_frame(audio_stream, buffer, len);
             audio_p += len * 2;
         } else  if (MEDIA_STREAM_L16 == audio_stream->type) {
@@ -81,7 +80,6 @@ static void streamaudio(media_stream_t *audio_stream)
                 buffer[i * 2] = pcm[i] >> 8;
                 buffer[i * 2 + 1] = pcm[i] & 0xff;
             }
-            printf("audio %p %d\n", audio_p, len * 2);
             audio_stream->handle_frame(audio_stream, buffer, len * 2);
             audio_p += len * 2;
         }
