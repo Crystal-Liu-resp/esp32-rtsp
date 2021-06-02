@@ -66,6 +66,7 @@ UDPSOCKET udpsocketcreate(unsigned short portNum)
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
     if (bind(sockfd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
         ESP_LOGW(TAG, "udp server bind error, code: %d, reason: %s", errno, strerror(errno));
+        close(sockfd);
         return 0;
     }
 

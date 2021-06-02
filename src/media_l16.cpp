@@ -3,9 +3,9 @@
 #include <string.h>
 #include "media_stream.h"
 #include "g711.h"
-#include "media_g711a.h"
+#include "media_l16.h"
 
-static const char *TAG = "rtp_g711a";
+static const char *TAG = "rtp_l16";
 
 #define RTP_CHECK(a, str, ret_val)                       \
     if (!(a))                                                     \
@@ -18,26 +18,23 @@ static const char *TAG = "rtp_g711a";
  * https://datatracker.ietf.org/doc/html/rfc2327
  *
  */
-void media_stream_l16_get_description(char *buf, uint32_t buf_len, uint16_t port)
+void media_stream_l16_get_description(media_stream_t *stream, char *buf, uint32_t buf_len, uint16_t port)
 {
     snprintf(buf, buf_len, "m=audio %hu RTP/AVP %d", port, RTP_PT_L16_CH1);
 }
 
-void media_stream_l16_get_attribute(char *buf, uint32_t buf_len)
+void media_stream_l16_get_attribute(media_stream_t *stream, char *buf, uint32_t buf_len)
 {
     snprintf(buf, buf_len, 
-    "a=rtpmap:%d L16/16000/1\r\n"
+    "a=rtpmap:%d L16/%hu/1\r\n"
     "a=framerate:100\r\n",
-    RTP_PT_L16_CH1);
+    RTP_PT_L16_CH1, stream->sample_rate);
 }
 
 int media_stream_l16_send_frame(media_stream_t *stream, const uint8_t *data, uint32_t len)
 {
-    if (len > MAX_RTP_PAYLOAD_SIZE) {
-        return 1;
-    }
 
-#define MAX_PCMA_PACKET_SIZE (MAX_RTP_PAYLOAD_SIZE - RTP_HEADER_SIZE - RTP_TCP_HEAD_SIZE)
+#define MAX_L16_PACKET_SIZE (MAX_RTP_PAYLOAD_SIZE - RTP_HEADER_SIZE - RTP_TCP_HEAD_SIZE)
 
     rtp_packet_t rtp_packet;
     rtp_packet.is_last = 0;
@@ -57,10 +54,10 @@ int media_stream_l16_send_frame(media_stream_t *stream, const uint8_t *data, uin
 
         uint8_t *p_buf = (uint8_t *)pcma_buf;
 
-        uint32_t fragmentLen = MAX_PCMA_PACKET_SIZE - (p_buf - pcma_buf);
+        uint32_t fragmentLen = MAX_L16_PACKET_SIZE - (p_buf - pcma_buf);
         if (fragmentLen >= data_bytes_left) {
             fragmentLen = data_bytes_left;
-            rtp_packet.is_last = 1; // RTP marker bit must be set on last fragment
+            rtp_packet.is_last = 0; // RTP marker bit must be set on last fragment
         }
 
         memcpy(p_buf, data + offset, fragmentLen);
@@ -87,7 +84,7 @@ static void media_stream_l16_delete(media_stream_t *stream)
     free(stream);
 }
 
-media_stream_t *media_stream_l16_create(void)
+media_stream_t *media_stream_l16_create(uint16_t sample_rate)
 {
     media_stream_t *stream = (media_stream_t *)calloc(1, sizeof(media_stream_t));
     RTP_CHECK(NULL != stream, "memory for g711a stream is not enough", NULL);
@@ -98,11 +95,11 @@ media_stream_t *media_stream_l16_create(void)
         ESP_LOGE(TAG, "memory for media mjpeg buffer is insufficient");
         return NULL;
     }
-    stream->type = MEDIA_STREAM_PCMA;
-    stream->clock_rate = 8000;
+    stream->type = MEDIA_STREAM_L16; //TODO:
+    stream->sample_rate = sample_rate;
+    stream->clock_rate = sample_rate;
     stream->delete_media = media_stream_l16_delete;
     stream->get_attribute = media_stream_l16_get_attribute;
-    stream->get_channels = NULL;
     stream->get_description = media_stream_l16_get_description;
     stream->handle_frame = media_stream_l16_send_frame;
     return stream;

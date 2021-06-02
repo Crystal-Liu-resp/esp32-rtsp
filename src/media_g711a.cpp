@@ -18,24 +18,21 @@ static const char *TAG = "rtp_g711a";
  * https://datatracker.ietf.org/doc/html/rfc2327
  *
  */
-static void media_stream_g711a_get_description(char *buf, uint32_t buf_len, uint16_t port)
+static void media_stream_g711a_get_description(media_stream_t *stream, char *buf, uint32_t buf_len, uint16_t port)
 {
     snprintf(buf, buf_len, "m=audio %hu RTP/AVP %d", port, RTP_PT_PCMA);
 }
 
-static void media_stream_g711a_get_attribute(char *buf, uint32_t buf_len)
+static void media_stream_g711a_get_attribute(media_stream_t *stream, char *buf, uint32_t buf_len)
 {
     snprintf(buf, buf_len, 
-    "a=rtpmap:%d PCMA/8000/1\r\n"
+    "a=rtpmap:%d PCMA/%hu/1\r\n"
     "a=framerate:100\r\n",
-    RTP_PT_PCMA);
+    RTP_PT_PCMA, stream->sample_rate);
 }
 
 static int media_stream_g711a_send_frame(media_stream_t *stream, const uint8_t *data, uint32_t len)
 {
-    if (len > MAX_RTP_PAYLOAD_SIZE) {
-        return 1;
-    }
 
 #define MAX_PCMA_PACKET_SIZE (MAX_RTP_PAYLOAD_SIZE - RTP_HEADER_SIZE - RTP_TCP_HEAD_SIZE)
 
@@ -87,7 +84,7 @@ static void media_stream_g711a_delete(media_stream_t *stream)
     free(stream);
 }
 
-media_stream_t *media_stream_g711a_create(void)
+media_stream_t *media_stream_g711a_create(uint16_t sample_rate)
 {
     media_stream_t *stream = (media_stream_t *)calloc(1, sizeof(media_stream_t));
     RTP_CHECK(NULL != stream, "memory for g711a stream is not enough", NULL);
@@ -100,9 +97,9 @@ media_stream_t *media_stream_g711a_create(void)
     }
     stream->type = MEDIA_STREAM_PCMA;
     stream->clock_rate = 8000;
+    stream->sample_rate = sample_rate;
     stream->delete_media = media_stream_g711a_delete;
     stream->get_attribute = media_stream_g711a_get_attribute;
-    stream->get_channels = NULL;
     stream->get_description = media_stream_g711a_get_description;
     stream->handle_frame = media_stream_g711a_send_frame;
     return stream;

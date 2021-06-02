@@ -1,7 +1,7 @@
 ﻿
 
-#ifndef _MEDIA_G711A_H_
-#define _MEDIA_G711A_H_
+#ifndef _MEDIA_L16_H_
+#define _MEDIA_L16_H_
 
 #include "media_stream.h"
 
@@ -10,7 +10,7 @@
 extern "C" {
 #endif
 
-media_stream_t *media_stream_g711a_create(void);
+media_stream_t *media_stream_l16_create(uint16_t sample_rate);
 
 
 #ifdef __cplusplus

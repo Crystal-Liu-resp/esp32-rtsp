@@ -20,6 +20,8 @@
 #include "rtsp_session.h"
 #include "media_mjpeg.h"
 #include "media_g711a.h"
+#include "media_l16.h"
+#include "g711.h"
 #include "../images/frames.h"
 
 char *wave_get(void);
@@ -32,7 +34,8 @@ static void streamImage(media_stream_t *mjpeg_stream)
 {
     static uint32_t index = 0;
     static int64_t last_frame = 0;
-    if (esp_timer_get_time() - last_frame > 80000) {
+    int64_t interval = (esp_timer_get_time() - last_frame) / 1000;
+    if (interval > 50) {
         printf("frame\n");
         uint8_t *p = g_frames[index][0];
         uint32_t len = g_frames[index][1] - g_frames[index][0];
@@ -45,37 +48,50 @@ static void streamImage(media_stream_t *mjpeg_stream)
         last_frame = esp_timer_get_time();
     }
 }
-#include "g711.h"
-static void streamaudio(media_stream_t *pcma_stream)
+
+static uint8_t *audio_p;
+static uint8_t *audio_end;
+static int64_t audio_last_frame = 0;
+static void streamaudio(media_stream_t *audio_stream)
 {
     static uint8_t buffer[8192];
-    static uint8_t *p=NULL;
-    uint8_t *end = (uint8_t *)wave_get() + wave_get_size();
-    static int64_t last_frame = 0;
-    int64_t interval = (esp_timer_get_time() - last_frame) / 1000;
-    if (0 == last_frame) {
-        last_frame = esp_timer_get_time();
-        p = (uint8_t *)wave_get();
+    int64_t interval = (esp_timer_get_time() - audio_last_frame) / 1000;
+    if (audio_last_frame == 0) {
+        audio_last_frame = esp_timer_get_time();
+        audio_p = (uint8_t *)wave_get();
         return;
     }
-
     if (interval > 100) {
-        
-        uint32_t len = interval * 8; //8byte per ms
-        len = len * 2 > (end - p) ? (end - p) / 2 : len;
-        uint16_t *pcm = (uint16_t *)p;
-        for (size_t i = 0; i < len; i++) {
-            buffer[i] = ALaw_Encode(pcm[i]);
+        uint32_t len = 0;
+        if (MEDIA_STREAM_PCMA == audio_stream->type) {
+            len = interval * 8; //8byte per ms
+            len = len * 2 > (audio_end - audio_p) ? (audio_end - audio_p) / 2 : len;
+            int16_t *pcm = (int16_t *)audio_p;
+            for (size_t i = 0; i < len; i++) {
+                buffer[i] = linear2alaw(pcm[i]);
+            }
+            printf("audio %p %d\n", audio_p, len);
+            audio_stream->handle_frame(audio_stream, buffer, len);
+            audio_p += len * 2;
+        } else  if (MEDIA_STREAM_L16 == audio_stream->type) {
+            len = interval * 16; //8byte per ms
+            len = len * 2 > (audio_end - audio_p) ? (audio_end - audio_p) / 2 : len;
+            int16_t *pcm = (int16_t *)audio_p;
+            for (size_t i = 0; i < len; i++) {
+                buffer[i * 2] = pcm[i] >> 8;
+                buffer[i * 2 + 1] = pcm[i] & 0xff;
+            }
+            printf("audio %p %d\n", audio_p, len * 2);
+            audio_stream->handle_frame(audio_stream, buffer, len * 2);
+            audio_p += len * 2;
         }
-        printf("audio %d, %p\n", len, p);
+        printf("audio end\n");
 
-        pcma_stream->handle_frame(pcma_stream, buffer, len);
-        p += len*2;
-        if (p >= end) {
-            p = (uint8_t *)wave_get();
+        if (audio_p >= audio_end) {
+            audio_p = (uint8_t *)wave_get();
         }
 
-        last_frame = esp_timer_get_time();
+        audio_last_frame = esp_timer_get_time();
     }
 }
 
@@ -83,15 +99,19 @@ static void rtsp_video()
 {
     printf("running RTSP server\n");
 
-    rtsp_session_t *rtsp = rtsp_session_create("mjpeg/1", 554);
+    rtsp_session_t *rtsp = rtsp_session_create("mjpeg/1", 8554);
     media_stream_t *mjpeg = media_stream_mjpeg_create();
-    media_stream_t *pcma = media_stream_g711a_create();
+    media_stream_t *pcma = media_stream_g711a_create(8000);
+    media_stream_t *l16 = media_stream_l16_create(16000);
     rtsp_session_add_media_stream(rtsp, mjpeg);
-    rtsp_session_add_media_stream(rtsp, pcma);
+    rtsp_session_add_media_stream(rtsp, l16);
 
     while (true) {
 
         rtsp_session_accept(rtsp);
+        audio_p = (uint8_t *)wave_get();
+        audio_end = (uint8_t *)wave_get() + wave_get_size();
+        audio_last_frame = 0;
 
         while (1) {
             int ret = rtsp_handle_requests(rtsp, 1);
@@ -101,7 +121,7 @@ static void rtsp_video()
 
             if (rtsp->state & 0x02) {
                 streamImage(mjpeg);
-                streamaudio(pcma);
+                streamaudio(l16);
             }
         }
         rtsp_session_terminate(rtsp);

@@ -294,19 +294,19 @@ static void GetSdpMessage(rtsp_session_t *session, char *buf, uint32_t buf_len, 
     media_streams_t *it;
     SLIST_FOREACH(it, &session->media_list, next) {
         if (RTP_OVER_MULTICAST == session->transport_mode) {
-            it->media_stream->get_description(str_buf, sizeof(str_buf), 0);
+            it->media_stream->get_description(it->media_stream, str_buf, sizeof(str_buf), 0);
             snprintf(buf + strlen(buf), buf_len - strlen(buf),
                      "%s\r\n", str_buf);
 
             snprintf(buf + strlen(buf), buf_len - strlen(buf),
                      "c=IN IP4 %s/255\r\n", "0.0.0.0"/*multicast_ip_.c_str()*/);
         } else {
-            it->media_stream->get_description(str_buf, sizeof(str_buf), 0);
+            it->media_stream->get_description(it->media_stream, str_buf, sizeof(str_buf), 0);
             snprintf(buf + strlen(buf), buf_len - strlen(buf),
                      "%s\r\n", str_buf);
         }
 
-        it->media_stream->get_attribute(str_buf, sizeof(str_buf));
+        it->media_stream->get_attribute(it->media_stream, str_buf, sizeof(str_buf));
         snprintf(buf + strlen(buf), buf_len - strlen(buf),
                  "%s\r\n", str_buf);
         snprintf(buf + strlen(buf), buf_len - strlen(buf),

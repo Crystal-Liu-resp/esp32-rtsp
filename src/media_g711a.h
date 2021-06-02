@@ -10,7 +10,7 @@
 extern "C" {
 #endif
 
-media_stream_t *media_stream_g711a_create(void);
+media_stream_t *media_stream_g711a_create(uint16_t sample_rate);
 
 
 #ifdef __cplusplus

@@ -18,12 +18,12 @@ static const char *TAG = "rtp_mjpeg";
 #define MAX_JPEG_PACKET_SIZE (MAX_RTP_PAYLOAD_SIZE - RTP_HEADER_SIZE - RTP_TCP_HEAD_SIZE)
 
 
-static void media_stream_mjpeg_get_description(char *buf, uint32_t buf_len, uint16_t port)
+static void media_stream_mjpeg_get_description(media_stream_t *stream, char *buf, uint32_t buf_len, uint16_t port)
 {
     snprintf(buf, buf_len, "m=video %hu RTP/AVP %d", port, RTP_PT_JPEG);
 }
 
-static void media_stream_mjpeg_get_attribute(char *buf, uint32_t buf_len)
+static void media_stream_mjpeg_get_attribute(media_stream_t *stream, char *buf, uint32_t buf_len)
 {
     snprintf(buf, buf_len, "a=rtpmap:%d JPEG/90000", RTP_PT_JPEG);
 }
@@ -217,7 +217,6 @@ media_stream_t* media_stream_mjpeg_create(void)
     stream->clock_rate = 90000;
     stream->delete_media = media_stream_mjpeg_delete;
     stream->get_attribute = media_stream_mjpeg_get_attribute;
-    stream->get_channels = NULL;
     stream->get_description = media_stream_mjpeg_get_description;
     stream->handle_frame = media_stream_mjpeg_send_frame;
     return stream;
