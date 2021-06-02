@@ -12,6 +12,15 @@
 #include "esp_timer.h"
 #include "port-esp32.h"
 
+static const char *TAG = "glue esp32";
+
+#define ERR_CHECK(a, str, ret_val)                       \
+    if (!(a))                                                     \
+    {                                                             \
+        ESP_LOGE(TAG, "%s(%d): %s", __FUNCTION__, __LINE__, str); \
+        return (ret_val);                                         \
+    }
+
 // inline void closesocket(SOCKET s) {
 //     printf("closing TCP socket\n");
 
@@ -40,7 +49,6 @@ void udpsocketclose(UDPSOCKET s) {
     close(s);
 }
 
-
 UDPSOCKET udpsocketcreate(unsigned short portNum)
 {
     struct sockaddr_in addr;
@@ -49,16 +57,16 @@ UDPSOCKET udpsocketcreate(unsigned short portNum)
 
     sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0) {
-        ESP_LOGW("glue esp32", "%s error, error code: %d, reason: %s", "udp server create", sockfd, strerror(sockfd));
-        return ESP_FAIL;
+        ESP_LOGW(TAG, "udp server create error, code: %d, reason: %s", errno, strerror(errno));
+        return 0;
     }
 
     addr.sin_family = AF_INET;
     addr.sin_port = htons(portNum);
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
     if (bind(sockfd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
-        ESP_LOGW("glue esp32", "%s error, error code: %d, reason: %s", "udp server bind", sockfd, strerror(sockfd));
-        return ESP_FAIL;
+        ESP_LOGW(TAG, "udp server bind error, code: %d, reason: %s", errno, strerror(errno));
+        return 0;
     }
 
     return sockfd;

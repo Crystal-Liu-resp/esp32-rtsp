@@ -36,6 +36,10 @@ static bool ParseRequestLine(rtsp_session_t *session, const char *message)
     if (sscanf(message, "%s %s %s", method, url, version) != 3) {
         return true;
     }
+    char *url_end = &url[strlen(url) - 1];
+    if (*url_end == '/') {
+        *url_end = '\0';
+    }
 
     if (strstr(method, "OPTIONS")) {
         session->m_RtspCmdType = RTSP_OPTIONS;
@@ -54,36 +58,27 @@ static bool ParseRequestLine(rtsp_session_t *session, const char *message)
         return true;
     }
 
-    printf("RTSP received %s\n", method);
-
     if (strncmp(url, "rtsp://", 7) != 0) {
         return true;
     }
 
     // parse url
-    uint16_t port = 0;
-    char suffix[64] = {0};
+    if (sscanf(url + 7, "%[^:]:%hu/%s", session->m_ip, &session->port, session->url_suffix) == 3) {
 
-    if (sscanf(url + 7, "%[^:]:%hu/%s", session->m_ip, &port, suffix) == 3) {
-
-    } else if (sscanf(url + 7, "%[^/]/%s", session->m_ip, suffix) == 2) {
-        port = 554;
+    } else if (sscanf(url + 7, "%[^/]/%s", session->m_ip, session->url_suffix) == 2) {
+        session->port = 554;
     } else {
         return true;
     }
-
-    sprintf(session->m_HostPort, "%s:%d", session->m_ip, port);
-    sprintf(session->m_url, "%s", url);
-
-    ESP_LOGD(TAG, "HostPort:%s", session->m_HostPort);
+    strcpy(session->m_url, url);
     ESP_LOGD(TAG, "url:%s", session->m_url);
-
+    ESP_LOGD(TAG, "url_suffix:%s", session->url_suffix);
     return 0;
 }
 
 static bool ParseHeadersLine(rtsp_session_t *session, const char *message)
 {
-    ESP_LOGW(TAG, "<%s>", message);
+    ESP_LOGD(TAG, "<%s>", message);
     char *TmpPtr = NULL;
     TmpPtr = (char *)strstr(message, "CSeq: ");
     if (TmpPtr) {
@@ -191,7 +186,6 @@ static bool ParseRtspRequest(rtsp_session_t *session, const char *aRequest, uint
     session->m_RtspCmdType   = RTSP_UNKNOWN;
     session->m_CSeq = 0;
     memset(session->m_url, 0x00, sizeof(session->m_url));
-    memset(session->m_HostPort, 0x00, sizeof(session->m_HostPort));
     session->state_ = ParseState_RequestLine;
 
     bool ret = 0;
@@ -248,6 +242,25 @@ static char const *DateHeader(char *buf, uint32_t length)
 
 static void Handle_RtspOPTION(rtsp_session_t *session, char *Response, uint32_t *length)
 {
+    char time_str[64];
+    session->m_StreamID = -1;        // invalid URL
+    if (0 == strcmp(session->url_suffix, session->resource_url)) {
+        session->m_StreamID = 0;
+    }
+
+    if (session->m_StreamID == -1) {
+        ESP_LOGE(TAG, "[%s] Stream Not Found", session->m_url);
+        // Stream not available
+        int len = snprintf(Response, *length,
+                           "RTSP/1.0 404 Not Found\r\nCSeq: %u\r\n%s\r\n",
+                           session->m_CSeq,
+                           DateHeader(time_str, sizeof(time_str)));
+        if (len > 0) {
+            *length = len;
+        }
+        return;
+    }
+
     int len = snprintf(Response, *length,
                        "RTSP/1.0 200 OK\r\nCSeq: %u\r\n"
                        "Public: DESCRIBE, SETUP, TEARDOWN, PLAY, PAUSE\r\n\r\n", session->m_CSeq);
@@ -266,9 +279,9 @@ static void GetSdpMessage(rtsp_session_t *session, char *buf, uint32_t buf_len, 
              GET_RANDOM(), session->m_ip);
 
     if (session_name) {
-        snprintf(buf + strlen(buf), buf_len - strlen(buf),
-                 "s=%s\r\n",
-                 session_name);
+        snprintf(buf + strlen(buf), buf_len - strlen(buf), "s=%s\r\n", session_name);
+    } else {
+        snprintf(buf + strlen(buf), buf_len - strlen(buf), "s=Unnamed\r\n");
     }
 
     if (RTP_OVER_MULTICAST == session->transport_mode) {
@@ -278,48 +291,32 @@ static void GetSdpMessage(rtsp_session_t *session, char *buf, uint32_t buf_len, 
     }
 
     char str_buf[128];
-    for (uint32_t chn = 0; chn < session->media_stream_num; chn++) {
+    media_streams_t *it;
+    SLIST_FOREACH(it, &session->media_list, next) {
         if (RTP_OVER_MULTICAST == session->transport_mode) {
-            session->media_stream[chn]->get_description(str_buf, sizeof(str_buf), 0);
+            it->media_stream->get_description(str_buf, sizeof(str_buf), 0);
             snprintf(buf + strlen(buf), buf_len - strlen(buf),
                      "%s\r\n", str_buf);
 
             snprintf(buf + strlen(buf), buf_len - strlen(buf),
                      "c=IN IP4 %s/255\r\n", "0.0.0.0"/*multicast_ip_.c_str()*/);
         } else {
-            session->media_stream[chn]->get_description(str_buf, sizeof(str_buf), 0);
+            it->media_stream->get_description(str_buf, sizeof(str_buf), 0);
             snprintf(buf + strlen(buf), buf_len - strlen(buf),
                      "%s\r\n", str_buf);
         }
 
-        session->media_stream[chn]->get_attribute(str_buf, sizeof(str_buf));
+        it->media_stream->get_attribute(str_buf, sizeof(str_buf));
         snprintf(buf + strlen(buf), buf_len - strlen(buf),
                  "%s\r\n", str_buf);
         snprintf(buf + strlen(buf), buf_len - strlen(buf),
-                 "a=control:track%d\r\n", chn);
+                 "a=control:trackID=%d\r\n", it->trackid);
     }
 }
 
 static void Handle_RtspDESCRIBE(rtsp_session_t *session, char *Response, uint32_t *length)
 {
     char time_str[64];
-    session->m_StreamID = -1;        // invalid URL
-    if (strstr(session->m_url, session->resource_url)) {
-        session->m_StreamID = 0;
-    }
-
-    if (session->m_StreamID == -1) {
-        ESP_LOGE(TAG, "[%s] Stream Not Found", session->m_url);
-        // Stream not available
-        snprintf(Response, *length,
-                 "RTSP/1.0 404 Stream Not Found\r\nCSeq: %u\r\n%s\r\n",
-                 session->m_CSeq,
-                 DateHeader(time_str, sizeof(time_str)));
-
-        socketsend(session->m_RtspClient, Response, strlen(Response));
-        return;
-    };
-
     char SDPBuf[256];
     GetSdpMessage(session, SDPBuf, sizeof(SDPBuf), NULL);
     int len = snprintf(Response, *length,
@@ -342,19 +339,27 @@ static void Handle_RtspDESCRIBE(rtsp_session_t *session, char *Response, uint32_
 
 static void Handle_RtspSETUP(rtsp_session_t *session, char *Response, uint32_t *length)
 {
+    int32_t trackID = 0;
+    char *p = strstr(session->url_suffix, "trackID=");
+    if (p) {
+        trackID = atoi(p + 8);
+    } else {
+        ESP_LOGE(TAG, "can't parse trackID");
+    }
 
-    rtp_session_info_t rtp_session = {
+    ESP_LOGI(TAG, "trackID=%d", trackID);
+
+    rtp_session_info_t session_info = {
         .transport_mode = session->transport_mode,
         .socket_tcp = session->m_RtspClient,
         .rtp_port = session->m_ClientRTPPort,
     };
-    session->rtp_session[0] = rtp_session_create(&rtp_session);
-    session->media_stream[0]->rtp_session = session->rtp_session[0];
-
-    // init RTSP Session transport type (UDP or TCP) and ports for UDP transport
-    if (RTP_OVER_UDP == session->transport_mode) {
-        // allocate port pairs for RTP/RTCP ports in UDP transport mode
-        rtp_InitUdpTransport(session->rtp_session[0]);
+    media_streams_t *it;
+    SLIST_FOREACH(it, &session->media_list, next) {
+        if (it->trackid == trackID) {
+            it->media_stream->rtp_session = rtp_session_create(&session_info);
+            break;
+        }
     }
 
     char Transport[128];
@@ -366,8 +371,8 @@ static void Handle_RtspSETUP(rtsp_session_t *session, char *Response, uint32_t *
                  "RTP/AVP;unicast;client_port=%i-%i;server_port=%i-%i",
                  session->m_ClientRTPPort,
                  session->m_ClientRTCPPort,
-                 rtp_GetRtpServerPort(session->rtp_session[0]),
-                 rtp_GetRtcpServerPort(session->rtp_session[0]));
+                 rtp_GetRtpServerPort(it->media_stream->rtp_session),
+                 rtp_GetRtcpServerPort(it->media_stream->rtp_session));
     }
     int len = snprintf(Response, *length,
                        "RTSP/1.0 200 OK\r\nCSeq: %u\r\n"
@@ -440,15 +445,19 @@ rtsp_session_t *rtsp_session_create(const char *url, uint16_t port)
     session->m_ClientRTCPPort =  0;
     session->transport_mode =  RTP_OVER_UDP;
     session->state = 0;
+    SLIST_INIT(&session->media_list);
     return session;
 }
 
 
 int rtsp_session_delete(rtsp_session_t *session)
 {
-    for (uint32_t chn = 0; chn < session->media_stream_num; chn++) {
-        session->media_stream[chn]->delete_media(session->media_stream[chn]);
+    media_streams_t *it;
+    SLIST_FOREACH(it, &session->media_list, next) {
+        it->media_stream->delete_media(it->media_stream);
+        free(it);
     }
+
     closesocket(session->MasterSocket);
     free(session);
     return 0;
@@ -460,25 +469,29 @@ int rtsp_session_accept(rtsp_session_t *session)
     socklen_t ClientAddrLen = sizeof(ClientAddr);
     session->m_RtspClient = accept(session->MasterSocket, (struct sockaddr *)&ClientAddr, &ClientAddrLen);
     session->state |= 0x01;
-    ESP_LOGI(TAG, "Client connected. Client address: %s\r\n", inet_ntoa(ClientAddr.sin_addr));
+    ESP_LOGI(TAG, "Client connected. Client address: %s", inet_ntoa(ClientAddr.sin_addr));
     return 0;
 }
 
 int rtsp_session_terminate(rtsp_session_t *session)
 {
     ESP_LOGI(TAG, "closing RTSP session");
-    if (session->rtp_session[0]) {
-        rtp_ReleaseUdpTransport(session->rtp_session[0]);
-        rtp_session_delete(session->rtp_session[0]);
+    media_streams_t *it;
+    SLIST_FOREACH(it, &session->media_list, next) {
+        rtp_session_delete(it->media_stream->rtp_session);
     }
     closesocket(session->m_RtspClient);
     return 0;
 }
 
-int rtsp_session_add_media_stream(rtsp_session_t *session)
+int rtsp_session_add_media_stream(rtsp_session_t *session, media_stream_t *media)
 {
-    session->media_stream[0] = media_stream_mjpeg_create();
-    session->media_stream_num++;
+    media_streams_t *it = (media_streams_t *) calloc(1, sizeof(media_streams_t));
+    RTSP_SESSION_CHECK(NULL != it, "memory for rtsp media is not enough", -1);
+    it->media_stream = media;
+    it->trackid = session->media_stream_num++;
+    it->next.sle_next = NULL;
+    SLIST_INSERT_HEAD(&session->media_list, it, next);
     return 0;
 }
 

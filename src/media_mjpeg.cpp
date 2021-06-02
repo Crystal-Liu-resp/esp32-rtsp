@@ -17,15 +17,6 @@ static const char *TAG = "rtp_mjpeg";
 
 #define MAX_JPEG_PACKET_SIZE (MAX_RTP_PAYLOAD_SIZE - RTP_HEADER_SIZE - RTP_TCP_HEAD_SIZE)
 
-#define SOI  0xD8FF
-#define EOI  0xD9FF
-#define S0F0 0xC0FF
-#define S0F2 0xC2FF
-#define DHT  0xC4FF
-#define DQT  0xDBFF
-#define DRI  0xDDFF
-
-
 
 static void media_stream_mjpeg_get_description(char *buf, uint32_t buf_len, uint16_t port)
 {
@@ -75,9 +66,17 @@ static const uint8_t *findJPEGheader(const uint8_t *start, const uint8_t *end, u
 static bool decodeJPEGfile(const uint8_t **start, uint32_t *len, const uint8_t **qtable0, const uint8_t **qtable1, uint16_t *width, uint16_t *height)
 {
     /**
-     * ref https://en.wikipedia.org/wiki/JPEG_File_Interchange_Format
+     * JPEG format Reference:
+     * https://en.wikipedia.org/wiki/JPEG_File_Interchange_Format
      * http://lad.dsc.ufcg.edu.br/multimidia/jpegmarker.pdf
      */
+    #define SOI  0xD8FF
+    #define EOI  0xD9FF
+    #define S0F0 0xC0FF
+    #define S0F2 0xC2FF
+    #define DHT  0xC4FF
+    #define DQT  0xDBFF
+    #define DRI  0xDDFF
     const uint8_t *end = *start + *len;
 
     // Look for quant tables if they are present
@@ -138,11 +137,13 @@ int media_stream_mjpeg_send_frame(media_stream_t *stream, const uint8_t *jpeg_da
     uint8_t q = (qtable0 && qtable1) ? 128 : 0x5e;
     uint8_t *mjpeg_buf = rtp_packet.data + RTP_TCP_HEAD_SIZE + RTP_HEADER_SIZE;
 
-    // Prepare the 8 byte payload JPEG header
+    /**
+     * Prepare the 8 byte payload JPEG header. Reference https://tools.ietf.org/html/rfc2435
+     */
     jpeghdr_t jpghdr;
     jpghdr.tspec = 0; // type specific
     jpghdr.off = 0;
-    jpghdr.type = 0; // (fixme might be wrong for camera data) https://tools.ietf.org/html/rfc2435
+    jpghdr.type = 0; // (fixme might be wrong for camera data)
     jpghdr.q = q;
     jpghdr.width = w / 8;
     jpghdr.height = h / 8;
@@ -189,7 +190,7 @@ int media_stream_mjpeg_send_frame(media_stream_t *stream, const uint8_t *jpeg_da
         rtp_send_packet(stream->rtp_session, &rtp_packet);
     }
     // Increment ONLY after a full frame
-    stream->Timestamp += (stream->clock_rate * deltams / 1000); // fixed timestamp increment for a frame rate of 25fps
+    stream->Timestamp += (stream->clock_rate * deltams / 1000);
     return 0;
 }
 
@@ -212,6 +213,7 @@ media_stream_t* media_stream_mjpeg_create(void)
         ESP_LOGE(TAG, "memory for media mjpeg buffer is insufficient");
         return NULL;
     }
+    stream->type = MEDIA_STREAM_MJPEG;
     stream->clock_rate = 90000;
     stream->delete_media = media_stream_mjpeg_delete;
     stream->get_attribute = media_stream_mjpeg_get_attribute;

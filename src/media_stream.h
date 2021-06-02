@@ -10,8 +10,14 @@
 extern "C" {
 #endif
 
+typedef enum {
+    MEDIA_STREAM_MJPEG,
+    MEDIA_STREAM_PCMA,
+    MEDIA_STREAM_PCMU,
+}media_stream_type_t;
 
 typedef struct media_stream_t{
+    media_stream_type_t type;
     uint8_t *rtp_buffer;
     uint32_t prevMsec;
     uint32_t Timestamp;
@@ -26,6 +32,7 @@ typedef struct media_stream_t{
     uint32_t (*get_timestamp)();
 } media_stream_t;
 
+media_stream_t* media_stream_create();
 
 #ifdef __cplusplus
 }

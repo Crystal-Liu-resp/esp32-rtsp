@@ -19,6 +19,7 @@
 #include "app_wifi.h"
 #include "rtsp_session.h"
 #include "media_mjpeg.h"
+#include "media_g711a.h"
 #include "../images/frames.h"
 
 char *wave_get(void);
@@ -27,18 +28,51 @@ uint32_t wave_get_framerate(void);
 uint32_t wave_get_bits(void);
 uint32_t wave_get_ch(void);
 
-static void streamImage(rtsp_session_t *rtsp)
+static void streamImage(media_stream_t *mjpeg_stream)
 {
     static uint32_t index = 0;
     static int64_t last_frame = 0;
-    if (esp_timer_get_time() - last_frame > 40000) {
+    if (esp_timer_get_time() - last_frame > 80000) {
         printf("frame\n");
         uint8_t *p = g_frames[index][0];
         uint32_t len = g_frames[index][1] - g_frames[index][0];
-        rtsp->media_stream[0]->handle_frame(rtsp->media_stream[0], p, len);
+        mjpeg_stream->handle_frame(mjpeg_stream, p, len);
         index++;
         if (index >= 10) {
             index = 0;
+        }
+
+        last_frame = esp_timer_get_time();
+    }
+}
+#include "g711.h"
+static void streamaudio(media_stream_t *pcma_stream)
+{
+    static uint8_t buffer[8192];
+    static uint8_t *p=NULL;
+    uint8_t *end = (uint8_t *)wave_get() + wave_get_size();
+    static int64_t last_frame = 0;
+    int64_t interval = (esp_timer_get_time() - last_frame) / 1000;
+    if (0 == last_frame) {
+        last_frame = esp_timer_get_time();
+        p = (uint8_t *)wave_get();
+        return;
+    }
+
+    if (interval > 100) {
+        
+        uint32_t len = interval * 8; //8byte per ms
+        len = len * 2 > (end - p) ? (end - p) / 2 : len;
+        uint16_t *pcm = (uint16_t *)p;
+        for (size_t i = 0; i < len; i++) {
+            buffer[i] = ALaw_Encode(pcm[i]);
+        }
+        printf("audio %d, %p\n", len, p);
+
+        pcma_stream->handle_frame(pcma_stream, buffer, len);
+        p += len*2;
+        if (p >= end) {
+            p = (uint8_t *)wave_get();
         }
 
         last_frame = esp_timer_get_time();
@@ -50,7 +84,10 @@ static void rtsp_video()
     printf("running RTSP server\n");
 
     rtsp_session_t *rtsp = rtsp_session_create("mjpeg/1", 554);
-    rtsp_session_add_media_stream(rtsp);
+    media_stream_t *mjpeg = media_stream_mjpeg_create();
+    media_stream_t *pcma = media_stream_g711a_create();
+    rtsp_session_add_media_stream(rtsp, mjpeg);
+    rtsp_session_add_media_stream(rtsp, pcma);
 
     while (true) {
 
@@ -63,7 +100,8 @@ static void rtsp_video()
             }
 
             if (rtsp->state & 0x02) {
-                streamImage(rtsp);
+                streamImage(mjpeg);
+                streamaudio(pcma);
             }
         }
         rtsp_session_terminate(rtsp);

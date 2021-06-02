@@ -85,6 +85,8 @@ typedef enum {
     RTP_PT_LPC = 7,
     RTP_PT_PCMA = 8,
     RTP_PT_G722 = 9,
+    RTP_PT_L16_CH2 = 10,
+    RTP_PT_L16_CH1 = 11,
     RTP_PT_JPEG = 26,
     RTP_PT_H264 = 96,
     RTP_PT_AAC  = 37,

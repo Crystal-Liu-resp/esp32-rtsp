@@ -43,7 +43,7 @@ typedef struct {
 } rtp_session_info_t;
 
 typedef struct {
-    rtp_session_info_t rtp_session;
+    rtp_session_info_t session_info;
     rtp_hdr_t rtphdr;
     int RtpServerPort;
     int RtcpServerPort;
@@ -59,16 +59,13 @@ typedef struct {
 #define RTP_TCP_HEAD_SIZE      4
 
 
-rtp_session_t* rtp_session_create(rtp_session_info_t *rtp_session);
+rtp_session_t* rtp_session_create(rtp_session_info_t *session_info);
+
 void rtp_session_delete(rtp_session_t *session);
 
 uint16_t rtp_GetRtpServerPort(rtp_session_t *session);
 
 uint16_t rtp_GetRtcpServerPort(rtp_session_t *session);
-
-bool rtp_InitUdpTransport(rtp_session_t *session);
-
-void rtp_ReleaseUdpTransport(rtp_session_t *session);
 
 int rtp_send_packet(rtp_session_t *session, rtp_packet_t *packet);
 
