@@ -18,7 +18,8 @@ def re_file():
 f = open("frames.h",'w')
 
 file_list = re_file()
-file_list.sort(key=lambda x: int(x.split('_')[1][:-4]))
+file_list = sorted(file_list)
+# file_list.sort(key=lambda x: int(x.split('_')[1][:-4]))
 
 for s in file_list:
     t = s.replace(".", "_")
@@ -29,7 +30,7 @@ f.write("\nstatic uint8_t* g_frames[][2]={\n")
 for s in file_list:
     print("\"%s\"" % s)
     t = s.replace(".", "_")
-    f.write("    %s_start, %s_end,\n" % (t, t))
+    f.write("    {%s_start, %s_end,},\n" % (t, t))
 
 f.write("};\n\n")
 
