@@ -49,6 +49,7 @@ void rtp_session_delete(rtp_session_t *session)
 {
     if (NULL == session) {
         ESP_LOGE(TAG, "%s(%d): %s", __FUNCTION__, __LINE__, "Pointer of rtp session is invalid");
+        return;
     }
 
     rtp_ReleaseUdpTransport(session);

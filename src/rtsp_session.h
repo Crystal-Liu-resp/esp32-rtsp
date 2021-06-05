@@ -18,16 +18,19 @@ typedef enum {
     RTSP_DESCRIBE,
     RTSP_SETUP,
     RTSP_PLAY,
+    RTSP_PAUSE,
+    RTSP_ANNOUNCE,
     RTSP_TEARDOWN,
     RTSP_GET_PARAMETER,
+    RTSP_SET_PARAMETER,
     RTSP_UNKNOWN
-} RTSP_CMD_TYPES;
+} rtsp_method_t;
 
 typedef enum  {
-    ParseState_RequestLine,
-    ParseState_HeadersLine,
-    ParseState_GotAll,
-} RtspRequestParseState;
+    PARSE_STATE_REQUESTLINE,
+    PARSE_STATE_HEADERSLINE,
+    PARSE_STATE_GOTALL,
+} parse_state_t;
 
 typedef struct media_streams_t {
     media_stream_t *media_stream;
@@ -40,26 +43,24 @@ typedef struct {
     SLIST_HEAD(media_streams_list_t, media_streams_t) media_list;
     uint8_t media_stream_num;
 
-    int m_RtspSessionID;
+    int session_id;
     SOCKET MasterSocket;                                      // our masterSocket(socket that listens for RTSP client connections)
-    SOCKET m_RtspClient;                                      // RTSP socket of that session
-    int m_StreamID;                                           // number of simulated stream of that session
+    SOCKET client_socket;                                      // RTSP socket of that session
     IPPORT m_ClientRTPPort;                                  // client port for UDP based RTP transport
     IPPORT m_ClientRTCPPort;                                 // client port for UDP based RTCP transport
     transport_mode_t transport_mode;
-    uint16_t RTP_channel;
-    uint16_t RTCP_channel;
+    uint16_t rtp_channel;                             // only used for rtp over tcp
+    uint16_t rtcp_channel;                            // only used for rtp over tcp
 
     uint8_t RecvBuf[RTSP_BUFFER_SIZE];
-    RTSP_CMD_TYPES m_RtspCmdType;                             // command type (if any) of the current request
-    char m_url[RTSP_PARAM_STRING_MAX];                        // stream url
-    uint16_t port;
+    rtsp_method_t method;                             // method of the current request
+    uint32_t CSeq;                                    // RTSP command sequence number
+    char url[RTSP_PARAM_STRING_MAX];                // stream url
+    uint16_t url_port;                                // port in url
+    char url_ip[20];
     char url_suffix[RTSP_PARAM_STRING_MAX];
-    uint32_t m_CSeq;                                          // RTSP command sequence number
-    char resource_url[RTSP_PARAM_STRING_MAX];
-    char m_ip[20];
-    RtspRequestParseState state_;
-
+    char resource_url[RTSP_PARAM_STRING_MAX];         // registered url
+    parse_state_t parse_state;
     uint8_t state;
 } rtsp_session_t;
 

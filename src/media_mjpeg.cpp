@@ -2,7 +2,6 @@
 #include <stdio.h>
 #include <string.h>
 #include "rtp.h"
-#include "media.h"
 #include "media_stream.h"
 #include "media_mjpeg.h"
 
