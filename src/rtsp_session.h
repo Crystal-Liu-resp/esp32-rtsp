@@ -18,6 +18,7 @@ typedef enum {
     RTSP_DESCRIBE,
     RTSP_SETUP,
     RTSP_PLAY,
+    RTSP_RECORD,
     RTSP_PAUSE,
     RTSP_ANNOUNCE,
     RTSP_TEARDOWN,
@@ -43,7 +44,7 @@ typedef struct {
     SLIST_HEAD(media_streams_list_t, media_streams_t) media_list;
     uint8_t media_stream_num;
 
-    int session_id;
+    char session_id[32];
     SOCKET MasterSocket;                                      // our masterSocket(socket that listens for RTSP client connections)
     SOCKET client_socket;                                      // RTSP socket of that session
     IPPORT m_ClientRTPPort;                                  // client port for UDP based RTP transport
