@@ -1,11 +1,4 @@
-/* Hello World Example
 
-   This example code is in the Public Domain (or CC0 licensed, at your option.)
-
-   Unless required by applicable law or agreed to in writing, this
-   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
-   CONDITIONS OF ANY KIND, either express or implied.
-*/
 
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -52,6 +45,7 @@ static void streamImage(media_stream_t *mjpeg_stream)
 static uint8_t *audio_p;
 static uint8_t *audio_end;
 static int64_t audio_last_frame = 0;
+
 static void streamaudio(media_stream_t *audio_stream)
 {
     static uint8_t buffer[8192];
@@ -64,30 +58,38 @@ static void streamaudio(media_stream_t *audio_stream)
     if (interval > 100) {
         uint32_t len = 0;
         if (MEDIA_STREAM_PCMA == audio_stream->type) {
-            len = interval * 8; //8byte per ms
-            len = len * 2 > (audio_end - audio_p) ? (audio_end - audio_p) / 2 : len;
+            len = interval * 32;
+            if (len > sizeof(buffer)) {
+                len = sizeof(buffer);
+            }
             int16_t *pcm = (int16_t *)audio_p;
+            if (audio_p + len >= audio_end) {
+                len = audio_end - audio_p;
+                audio_p = (uint8_t *)wave_get();
+            }
             for (size_t i = 0; i < len; i++) {
                 buffer[i] = linear2alaw(pcm[i]);
             }
-            audio_stream->handle_frame(audio_stream, buffer, len);
-            audio_p += len * 2;
+            audio_stream->handle_frame(audio_stream, buffer, len/2);
+            audio_p += len;
         } else  if (MEDIA_STREAM_L16 == audio_stream->type) {
-            len = interval * 16; //8byte per ms
-            len = len * 2 > (audio_end - audio_p) ? (audio_end - audio_p) / 2 : len;
+            len = interval * 32;
+            if (len > sizeof(buffer)) {
+                len = sizeof(buffer);
+            }
             int16_t *pcm = (int16_t *)audio_p;
-            for (size_t i = 0; i < len; i++) {
+            if (audio_p + len >= audio_end) {
+                len = audio_end - audio_p;
+                audio_p = (uint8_t *)wave_get();
+            }
+            for (size_t i = 0; i < len / 2; i++) {
                 buffer[i * 2] = pcm[i] >> 8;
                 buffer[i * 2 + 1] = pcm[i] & 0xff;
             }
-            audio_stream->handle_frame(audio_stream, buffer, len * 2);
-            audio_p += len * 2;
+            audio_stream->handle_frame(audio_stream, buffer, len);
+            audio_p += len;
         }
         printf("audio end\n");
-
-        if (audio_p >= audio_end) {
-            audio_p = (uint8_t *)wave_get();
-        }
 
         audio_last_frame = esp_timer_get_time();
     }
@@ -99,10 +101,10 @@ static void rtsp_video()
 
     rtsp_session_t *rtsp = rtsp_session_create("mjpeg/1", 8554);
     media_stream_t *mjpeg = media_stream_mjpeg_create();
-    media_stream_t *pcma = media_stream_g711a_create(8000);
+    media_stream_t *pcma = media_stream_g711a_create(16000);
     media_stream_t *l16 = media_stream_l16_create(16000);
     rtsp_session_add_media_stream(rtsp, mjpeg);
-    rtsp_session_add_media_stream(rtsp, l16);
+    rtsp_session_add_media_stream(rtsp, pcma);
 
     while (true) {
 
@@ -119,7 +121,7 @@ static void rtsp_video()
 
             if (rtsp->state & 0x02) {
                 streamImage(mjpeg);
-                streamaudio(l16);
+                streamaudio(pcma);
             }
         }
         rtsp_session_terminate(rtsp);

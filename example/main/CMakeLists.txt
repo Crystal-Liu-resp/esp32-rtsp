@@ -11,8 +11,7 @@ set(_EMBED_FILES
 "../images/frames/hd_8.jpg"
 "../images/frames/hd_9.jpg")
 
-idf_component_register(SRC_DIRS "."  "../../src"
-                    INCLUDE_DIRS "."  "../../src"
-                    PRIV_REQUIRES console spi_flash nvs_flash fatfs mdns esp_http_server
+idf_component_register(SRC_DIRS "." 
+                    INCLUDE_DIRS "." 
                     EMBED_TXTFILES ${_EMBED_FILES} )
 
