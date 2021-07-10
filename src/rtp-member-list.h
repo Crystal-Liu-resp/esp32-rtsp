@@ -3,6 +3,16 @@
 
 #include "rtp-member.h"
 
+#define N_SOURCE 2 // unicast(1S + 1R)
+
+typedef struct 
+{
+	rtp_member *members[N_SOURCE];//1为sender,2为receiver
+	rtp_member **ptr;
+	int count;
+	int capacity;
+} rtp_member_list;
+
 void* rtp_member_list_create(void);
 void rtp_member_list_destroy(void* members);
 

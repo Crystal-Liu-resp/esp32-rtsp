@@ -351,16 +351,19 @@ static void Handle_RtspSETUP(rtsp_session_t *session, char *Response, uint32_t *
 
     ESP_LOGI(TAG, "trackID=%d", trackID);
 
-    rtp_session_info_t session_info = {
-        .transport_mode = session->transport_mode,
-        .socket_tcp = session->client_socket,
-        .rtp_port = session->m_ClientRTPPort,
-        .rtsp_channel = session->rtp_channel,
-    };
     media_streams_t *it;
     SLIST_FOREACH(it, &session->media_list, next) {
         if (it->trackid == trackID) {
-            // it->media_stream->rtp_session = rtp_session_create(&session_info);
+            rtp_session_info_t session_info = {
+                .transport_mode = session->transport_mode,
+                .socket_tcp = session->client_socket,
+                .rtp_port = session->m_ClientRTPPort,
+                .rtsp_channel = session->rtp_channel,
+                .bandwidth = 1000,
+                .frequence = it->media_stream->clock_rate,
+                .sender = RTP_SENDER,
+            };
+            it->media_stream->rtp_session = rtp_session_create(&session_info);
             break;
         }
     }
@@ -440,7 +443,7 @@ rtsp_session_t *rtsp_session_create(const char *url, uint16_t port)
 
     // bind our master socket to the RTSP port and listen for a client connection
     if (bind(session->MasterSocket, (struct sockaddr *)&ServerAddr, sizeof(ServerAddr)) != 0) {
-        ESP_LOGE(TAG, "error can't bind port errno=%d", errno);
+        ESP_LOGE(TAG, "error can't bind port errno=%d reason: %s", errno, strerror(errno));
         free(session);
         return NULL;
     }

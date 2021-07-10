@@ -4,16 +4,6 @@
 #include <assert.h>
 #include <errno.h>
 
-#define N_SOURCE 2 // unicast(1S + 1R)
-
-typedef struct 
-{
-	rtp_member *members[N_SOURCE];
-	rtp_member **ptr;
-	int count;
-	int capacity;
-} rtp_member_list;
-
 void* rtp_member_list_create()
 {
 	return (rtp_member_list *)calloc(1, sizeof(rtp_member_list));
@@ -39,6 +29,7 @@ void rtp_member_list_destroy(void* members)
 	free(p);
 }
 
+//返回member数量
 int rtp_member_list_count(void* members)
 {
 	rtp_member_list *p;
@@ -46,6 +37,7 @@ int rtp_member_list_count(void* members)
 	return p->count;
 }
 
+//返回特定的某一个member
 rtp_member* rtp_member_list_get(void* members, int index)
 {
 	rtp_member_list *p;
@@ -53,9 +45,10 @@ rtp_member* rtp_member_list_get(void* members, int index)
 	if(index >= p->count || index < 0)
 		return NULL;
 
-	return index >= N_SOURCE ? p->ptr[index-N_SOURCE] : p->members[index];
+	return index >= N_SOURCE ? p->ptr[index-N_SOURCE] : p->members[index];//不止1S+1R，返回前面的，否则返回后面的
 }
 
+//返回由ssrc决定的特定的某一个member
 rtp_member* rtp_member_list_find(void* members, uint32_t ssrc)
 {
 	int i;
@@ -72,12 +65,13 @@ rtp_member* rtp_member_list_find(void* members, uint32_t ssrc)
 	return NULL;
 }
 
+//添加member到list里面
 int rtp_member_list_add(void* members, rtp_member* s)
 {
 	rtp_member_list *p;
 	p = (rtp_member_list *)members;
 
-	if(p->count >= N_SOURCE)
+	if(p->count >= N_SOURCE)//不止1S+1R
 	{
 		if(p->count - N_SOURCE >= p->capacity)
 		{
@@ -92,7 +86,7 @@ int rtp_member_list_add(void* members, rtp_member* s)
 	}
 	else
 	{
-		p->members[p->count] = s;
+		p->members[p->count] = s;//添加的是1S+1R
 	}
 
 	rtp_member_addref(s);

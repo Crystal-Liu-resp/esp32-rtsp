@@ -5,16 +5,12 @@
 #include "rtp.h"
 #include <pthread.h>
 #include "rtcp-internal.h"
+#include "rtcp-interval.h"
 #include "rtcp-header.h"
 #include "rtp-member.h"
 #include "rtp-member-list.h"
 
 static const char *TAG = "RTP";
-
-enum { 
-	RTP_SENDER		= 1,	/// send RTP packet
-	RTP_RECEIVER	= 2,	/// receive RTP packet
-};
 
 #define RTP_CHECK(a, str, ret_val)                       \
     if (!(a))                                                     \
@@ -74,7 +70,7 @@ uint8_t *mem_swap32_copy(uint8_t *out, const uint8_t *in, uint32_t length)
     return out + length;
 }
 
-rtp_session_t *rtp_session_create(rtp_session_info_t *session_info, uint32_t ssrc, uint32_t timestamp, int frequence, int bandwidth, int sender)
+rtp_session_t *rtp_session_create(rtp_session_info_t *session_info)
 {
     rtp_session_t *session = (rtp_session_t *)calloc(1, sizeof(rtp_session_t));
     RTP_CHECK(NULL != session, "memory for RTP session is not enough", NULL);
@@ -86,30 +82,16 @@ rtp_session_t *rtp_session_create(rtp_session_info_t *session_info, uint32_t ssr
 
     session->session_info = *session_info;
 
-    session->self = rtp_member_create(ssrc);
-	session->members = rtp_member_list_create();
-	session->senders = rtp_member_list_create();
-	if(!session->self || !session->members || !session->senders)
-	{
-		rtp_session_delete(session);
-		return NULL;
-	}
-
-    session->self->rtp_clock = rtpclock();
-    session->self->rtp_timestamp = timestamp;
-    rtp_member_list_add(session->members, session->self);
-
-
     // init RTSP Session transport type (UDP or TCP) and ports for UDP transport
     if (RTP_OVER_UDP == session->session_info.transport_mode) {
         rtp_InitUdpTransport(session);
     }
 
 //	session->cbparam = param;
-	session->rtcp_bw = (int)(bandwidth * RTCP_BANDWIDTH_FRACTION);
+	session->rtcp_bw = (int)(session_info->bandwidth * RTCP_BANDWIDTH_FRACTION);
 	session->avg_rtcp_size = 0;
-	session->frequence = frequence;
-	session->role = sender ? RTP_SENDER : RTP_RECEIVER;
+	session->frequence = session_info->frequence;
+	session->role = session_info->sender ? RTP_SENDER : RTP_RECEIVER;
 	session->init = 1;
 
     session->rtphdr.version = RTP_VERSION;
@@ -122,6 +104,19 @@ rtp_session_t *rtp_session_create(rtp_session_info_t *session_info, uint32_t ssr
     session->rtphdr.ts = 0;
     session->rtphdr.ssrc = GET_RANDOM();
     ESP_LOGI(TAG, "rtp sscr = %X", session->rtphdr.ssrc);
+
+    session->self = rtp_member_create(session->rtphdr.ssrc);
+	session->members = rtp_member_list_create();
+	session->senders = rtp_member_list_create();
+	if(!session->self || !session->members || !session->senders)
+	{
+		rtp_session_delete(session);
+		return NULL;
+	}
+
+    session->self->rtp_clock = rtpclock();
+    session->self->rtp_timestamp = session->rtphdr.ts;
+    rtp_member_list_add(session->members, session->self);
 
     pthread_t new_thread = (pthread_t)NULL;
     int res = pthread_create(&new_thread, NULL, rtcp_receive_task, (void *) session);
@@ -163,6 +158,7 @@ uint64_t rtp_time_now_us(void)
 
 uint16_t rtp_GetRtpServerPort(rtp_session_t *session)
 {
+    printf("RtpServerPort=%d\n", session->RtpServerPort);
     return session->RtpServerPort;
 }
 
@@ -276,19 +272,18 @@ void rtcp_receive_parse(const uint8_t *buffer, uint32_t len)
 
     uint32_t deal_len = 0;
     while (deal_len < len) {
-        rtcp_common_t *rtsp_com = (rtcp_common_t *)buffer;
+        rtcp_hdr_t *rtsp_com = (rtcp_hdr_t *)buffer;
         printf("pt=%d, len=%d\n", rtsp_com->pt, (rtsp_com->length + 1) * 4);
 
         if (RTCP_RR == rtsp_com->pt) {
             printf("sender ssrc=%X\n", *(uint32_t *)(buffer + 4));
             rtcp_rr_t *rr = (rtcp_rr_t *)(buffer + 8);
             printf("ssrc=%X\n", rr->ssrc);
-            printf("lost=%d\n", rr->lost);
-            printf("fraction=%d\n", rr->fraction);
-            printf("last_seq=%d\n", rr->last_seq);
-            printf("jitter=%d\n", rr->jitter);
-            printf("lsr=%d\n", rr->lsr);
-            printf("dlsr=%d\n", rr->dlsr);
+            printf("lost=%d\n", rr->rb->cumulative);
+            printf("fraction=%d\n", rr->rb->fraction);
+            printf("jitter=%d\n", rr->rb->jitter);
+            printf("lsr=%d\n", rr->rb->lsr);
+            printf("dlsr=%d\n", rr->rb->dlsr);
         } else if (RTCP_SR == rtsp_com->pt) {
 
         } else if (RTCP_SDES == rtsp_com->pt) {
@@ -339,45 +334,50 @@ static void *rtcp_receive_task(void *args)
             pthread_exit(NULL);
         }
     }
+}
+
 //rtcp packet 有很多种类型
-int rtcp_send_packet(rtp_session_t *session, rtcp_packet_t *packet)
+//session为接收到的当前对话，可以知道有多少个senders
+//服务器只会发rr,...
+int rtcp_send_packet(rtp_session_t *session, uint8_t *buf, uint32_t length)
 {
     int ret = -1;
     uint32_t RTCP_SIZE;
-    uint8_t *udp_buf;
+    uint8_t *udp_buf=buf;
 
     // Initialize RTP header
-    rtcp_hdr_t *rtcphdr = &session->rtcphdr;    
+    rtcp_hdr_t *rtcphdr = &session->rtcphdr;
 
-    rtcphdr->count = packet->count;
+    //rtcphdr->count = packet->count;
 
-    rtcphdr->pt = packet->type;
-    rtcphdr->length = packet->size;
+    rtcphdr->pt = RTCP_RR;//packet->type;
+    //rtcphdr->length = packet->size;
 
-    switch(rtcphdr.pt)
+    switch(rtcphdr->pt)
 	{
 	case RTCP_SR:
-		RTCP_SIZE=rtcp_sr_pack(session, udp_buf, packet->size);
+		RTCP_SIZE=rtcp_sr_pack(session, udp_buf, length);
 		break;
 
 	case RTCP_RR:
-		RTCP_SIZE=rtcp_rr_pack(session, udp_buf, packet->size);
+		RTCP_SIZE=rtcp_rr_pack(session, udp_buf, length);
 		break;
 
 	case RTCP_SDES:
-        RTCP_SIZE=rtcp_sdes_pack(session, udp_buf, packet->size);
+        RTCP_SIZE=rtcp_sdes_pack(session, udp_buf, length);
 		break;
 
 	case RTCP_BYE:
-        RTCP_SIZE=rtcp_bye_pack(session, udp_buf, packet->size);
+        RTCP_SIZE=rtcp_bye_pack(session, udp_buf, length);
 		break;
-
+    
 	case RTCP_APP:
-        RTCP_SIZE=rtcp_app_pack(session, udp_buf, packet->size);
+        // RTCP_SIZE=rtcp_app_pack(session, udp_buf, length);
 		break;
-
+    
 	default:
-		assert(0);
+        ESP_LOGE(TAG, "Unknow rtcp pt");
+		break;
 	}
 
     // Send RTCP packet
@@ -387,27 +387,26 @@ int rtcp_send_packet(rtp_session_t *session, rtcp_packet_t *packet)
         socketpeeraddr(session->session_info.socket_tcp, &otherip, &otherport);
         udpsocketsend(session->RtcpSocket, udp_buf, RTCP_SIZE, otherip, session->session_info.rtcp_port);
     }
-    session->sn++;
 
     return ret;
 }
 
 int rtp_onreceived(void* rtp, const void* data, int bytes)
 {
-	struct rtp_context *session = (struct rtp_context *)rtp;
+	rtp_session_t *session = (rtp_session_t *)rtp;
 	return rtcp_input_rtp(session, data, bytes);
 }
 
 int rtp_onreceived_rtcp(void* rtp, const void* rtcp, int bytes)
 {
-	struct rtp_context *session = (struct rtp_context *)rtp;
+	rtp_session_t *session = (rtp_session_t *)rtp;
 	return rtcp_input_rtcp(session, rtcp, bytes);
 }
 
 int rtp_rtcp_report(void* rtp, void* data, int bytes)
 {
 	int n;
-	struct rtp_context *session = (struct rtp_context *)rtp;
+	rtp_session_t *session = (rtp_session_t *)rtp;
 
 #pragma message("update we_sent flag")
 	// don't send packet in 2T
@@ -416,18 +415,18 @@ int rtp_rtcp_report(void* rtp, void* data, int bytes)
 	if(RTP_SENDER == session->role)
 	{
 		// send RTP in 2T
-		n = rtcp_sr_pack(session, (uint8_t*)data, bytes);
+		n = rtcp_sr_pack(session, (uint8_t*)data, bytes  );
 	}
 	else
 	{
 		assert(RTP_RECEIVER == session->role);
-		n = rtcp_rr_pack(session, (uint8_t*)data, bytes);
+		n = rtcp_rr_pack(session, (uint8_t*)data, bytes  );
 	}
 
 	// compound RTCP Packet
 	if(n < bytes)
 	{
-		n += rtcp_sdes_pack(session, (uint8_t*)data+n, bytes-n);
+		n += rtcp_sdes_pack(session, (uint8_t*)data+n, bytes-n  );
 	}
 
 	session->init = 0;
@@ -436,15 +435,15 @@ int rtp_rtcp_report(void* rtp, void* data, int bytes)
 
 int rtp_rtcp_bye(void* rtp, void* data, int bytes)
 {
-	struct rtp_context *session = (struct rtp_context *)rtp;
-	return rtcp_bye_pack(session, (uint8_t*)data, bytes);
+	rtp_session_t *session = (rtp_session_t *)rtp;
+	return rtcp_bye_pack(session, (uint8_t*)data, bytes  );
 }
 
 int rtp_rtcp_interval(void* rtp)
 {
 	double interval;
-	struct rtp_context *session = (struct rtp_context *)rtp;
-	interval = rtcp_interval(rtp_member_list_count(session->members),
+	rtp_session_t *session = (rtp_session_t *)rtp;
+	interval = rtcp_interval(rtp_member_list_count(session->members),//有多少个member
 		rtp_member_list_count(session->senders) + ((RTP_SENDER==session->role) ? 1 : 0),
 		session->rtcp_bw, 
 		(session->self->rtp_clock + 2*RTCP_REPORT_INTERVAL*1000 > rtpclock()) ? 1 : 0,
@@ -457,7 +456,7 @@ int rtp_rtcp_interval(void* rtp)
 const char* rtp_get_cname(void* rtp, uint32_t ssrc)
 {
 	rtp_member *member;
-	struct rtp_context *session = (struct rtp_context *)rtp;
+	rtp_session_t *session = (rtp_session_t *)rtp;
 	member = rtp_member_list_find(session->members, ssrc);
 	return member ? (char*)member->sdes[RTCP_SDES_CNAME].data : NULL;
 }
@@ -465,7 +464,7 @@ const char* rtp_get_cname(void* rtp, uint32_t ssrc)
 const char* rtp_get_name(void* rtp, uint32_t ssrc)
 {
 	rtp_member *member;
-	struct rtp_context *session = (struct rtp_context *)rtp;
+	rtp_session_t *session = (rtp_session_t *)rtp;
 	member = rtp_member_list_find(session->members, ssrc);
 	return member ? (char*)member->sdes[RTCP_SDES_NAME].data : NULL;
 }

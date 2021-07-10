@@ -535,7 +535,11 @@ int rtsp_client_push_media(rtsp_client_t *session, transport_mode_t transport_mo
             .socket_tcp = session->MasterSocket,
             .rtp_port = session->server_rtp_port,
             .rtsp_channel = it->trackid * 2,
+            .bandwidth = 1000,
+            .frequence = it->media_stream->clock_rate,
+            .sender = RTP_SENDER,
         };
+
         it->media_stream->rtp_session = rtp_session_create(&session_info);
         session->client_rtp_port = rtp_GetRtpServerPort(it->media_stream->rtp_session);
         session->client_rtcp_port = rtp_GetRtcpServerPort(it->media_stream->rtp_session);

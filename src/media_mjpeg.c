@@ -1,9 +1,11 @@
 
 #include <stdio.h>
 #include <string.h>
-#include "rtp.h"
+
 #include "media_stream.h"
 #include "media_mjpeg.h"
+#include "rtp.h"
+#include "time.h"
 
 static const char *TAG = "rtp_mjpeg";
 
@@ -110,10 +112,32 @@ static _Bool decodeJPEGfile(const uint8_t **start, uint32_t *len, const uint8_t 
     return 1;
 }
 
+int media_stream_mjpeg_SendRTCP(rtp_session_t *session , uint64_t *rtcp_clock, uint8_t *data, uint32_t len)
+{
+	// make sure have sent RTP packet
+    struct timespec tp;
+    clock_gettime(1, &tp);
+    uint64_t clock=(uint64_t)tp.tv_sec * 1000 + tp.tv_nsec;
+	int interval = rtp_rtcp_interval(session);
+	if(0 == rtcp_clock || rtcp_clock + interval < clock)
+	{
+		char rtcp[1024] = {0};
+		size_t n = rtp_rtcp_report(session, rtcp, sizeof(rtcp));
+
+		// send RTCP packet
+		rtcp_send_packet(&session, data, len);
+
+		rtcp_clock = clock;
+	}
+	
+	return 0;
+}
+
 int media_stream_mjpeg_send_frame(media_stream_t *stream, const uint8_t *jpeg_data, uint32_t jpegLen)
 {
     uint16_t w = 0;
     uint16_t h = 0;
+    uint64_t *rtcp_clock=0;
     uint32_t curMsec = (uint32_t)(rtp_time_now_us() / 1000);
     if (stream->prevMsec == 0) { // first frame init our timestamp
         stream->prevMsec = curMsec;
@@ -187,6 +211,10 @@ int media_stream_mjpeg_send_frame(media_stream_t *stream, const uint8_t *jpeg_da
         rtp_packet.timestamp = stream->Timestamp;
         rtp_packet.type = RTP_PT_JPEG;
         rtp_send_packet(stream->rtp_session, &rtp_packet);
+        /**
+         * TODO:refactor RTCP sender!
+         */
+        media_stream_mjpeg_SendRTCP(stream->rtp_session ,rtcp_clock, stream->rtp_buffer, 1000);
     }
     // Increment ONLY after a full frame
     stream->Timestamp += (stream->clock_rate * deltams / 1000);

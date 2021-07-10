@@ -174,7 +174,7 @@ static void get_local_ip(char *ipaddr)
     }
 
     memset(&ifr_ip, 0, sizeof(ifr_ip));
-    strncpy(ifr_ip.ifr_name, "eth0", sizeof(ifr_ip.ifr_name) - 1);
+    strncpy(ifr_ip.ifr_name, "enp1s0", sizeof(ifr_ip.ifr_name) - 1);
 
     if ( ioctl( sock_get_ip, SIOCGIFADDR, &ifr_ip) < 0 ) {
         memset(&ifr_ip, 0, sizeof(ifr_ip));
@@ -222,9 +222,9 @@ int main(void)
     get_folder_recording_cnt("../../simple/media/video/frames", &pic_num);
     char ip_str[64] = {0};
     get_local_ip(ip_str);
-    ESP_LOGI(TAG, "Creating RTSP session [rtsp://%s:%hu/%s]", ip_str, 8554, "mjpeg/1");
+    ESP_LOGI(TAG, "Creating RTSP session [rtsp://%s:%hu/%s]", ip_str, 8555, "mjpeg/1");
 
-    rtsp_session_t *rtsp = rtsp_session_create("mjpeg/1", 8554);
+    rtsp_session_t *rtsp = rtsp_session_create("mjpeg/1", 8555);
     mjpeg = media_stream_mjpeg_create();
     pcma = media_stream_g711a_create(16000);
     l16 = media_stream_l16_create(16000);

@@ -148,7 +148,7 @@ static void rtsp_video()
     pcma = media_stream_g711a_create(16000);
     l16 = media_stream_l16_create(16000);
     rtsp_session_add_media_stream(rtsp, mjpeg);
-    rtsp_session_add_media_stream(rtsp, l16);
+    // rtsp_session_add_media_stream(rtsp, l16);
 
     while (true) {
 
@@ -157,8 +157,8 @@ static void rtsp_video()
         audio_end = (uint8_t *)wave_get() + wave_get_size();
         audio_last_frame = 0;
 
-        pthread_t new_thread = (pthread_t)NULL;
-        pthread_create(&new_thread, NULL, send_audio, (void *) rtsp);
+        // pthread_t new_thread = (pthread_t)NULL;
+        // pthread_create(&new_thread, NULL, send_audio, (void *) rtsp);
         pthread_t _thread = (pthread_t)NULL;
         pthread_create(&_thread, NULL, send_video, (void *) rtsp);
 

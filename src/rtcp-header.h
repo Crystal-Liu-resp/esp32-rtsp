@@ -75,13 +75,13 @@ typedef struct // sender report
 	uint32_t rtpts;	 // rtp timestamp
 	uint32_t spc;	 // sender packet count
 	uint32_t soc;	 // sender octet count
-	rtcp_rb_t rr[1]; // variavle-length list 
+	rtcp_rb_t rb[1]; // variavle-length list 
 } rtcp_sr_t;
 
 typedef struct // receiver report
 {
 	uint32_t ssrc;
-	rtcp_rb_t rr[1]; // variavle-length list 
+	rtcp_rb_t rb[1]; // variavle-length list 
 } rtcp_rr_t;
 
 typedef struct//SDES
