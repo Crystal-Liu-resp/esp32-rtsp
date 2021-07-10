@@ -2,6 +2,8 @@
 
 ![license](https://img.shields.io/github/license/TDA-2030/esp32-rtsp)
 
+[![Build examples](https://github.com/TDA-2030/esp32-rtsp/actions/workflows/build.yml/badge.svg)](https://github.com/TDA-2030/esp32-rtsp/actions/workflows/build.yml)
+
 This is a lightweight RTSP protocol library. It's easy to make a low-cost webcam with ESP32/ESP32-S2/ESP32-S3 chip.
 
 ## Feature
@@ -29,7 +31,7 @@ This is a lightweight RTSP protocol library. It's easy to make a low-cost webcam
 
  When you run the simple example,  you only need the simplest ESP32/ESP32-S2/ESP32-S3 development board.
 
-1. entry  folder `example/simple`
+1. enter folder `example/simple`
 2. run command `idf.py menuconfig` to configure your WiFi information
 3. run command `idf.py flash monitor` to  download firmware
 4. Input the RTSP url prompted in the terminal log to [VLC](https://www.videolan.org/vlc/) or ffplay
