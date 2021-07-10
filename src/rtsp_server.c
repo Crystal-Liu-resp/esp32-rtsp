@@ -360,7 +360,7 @@ static void Handle_RtspSETUP(rtsp_session_t *session, char *Response, uint32_t *
     media_streams_t *it;
     SLIST_FOREACH(it, &session->media_list, next) {
         if (it->trackid == trackID) {
-            it->media_stream->rtp_session = rtp_session_create(&session_info);
+            // it->media_stream->rtp_session = rtp_session_create(&session_info);
             break;
         }
     }
