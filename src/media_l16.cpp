@@ -1,4 +1,4 @@
-﻿
+﻿//音频线性编码
 #include <stdio.h>
 #include <string.h>
 #include "media_stream.h"
@@ -14,9 +14,10 @@ static const char *TAG = "rtp_l16";
         return (ret_val);                                         \
     }
 
-/**
- * https://datatracker.ietf.org/doc/html/rfc2327
+/*
  *
+ * https://datatracker.ietf.org/doc/html/rfc2327
+ * SDP: Session Description Protocol
  */
 void media_stream_l16_get_description(media_stream_t *stream, char *buf, uint32_t buf_len, uint16_t port)
 {
@@ -31,6 +32,7 @@ void media_stream_l16_get_attribute(media_stream_t *stream, char *buf, uint32_t 
     RTP_PT_L16_CH1, stream->sample_rate);
 }
 
+/* 发送RTP包 */
 int media_stream_l16_send_frame(media_stream_t *stream, const uint8_t *data, uint32_t len)
 {
 

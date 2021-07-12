@@ -98,11 +98,11 @@ static void streamaudio(media_stream_t *audio_stream)
 static void rtsp_video()
 {
     rtsp_session_t *rtsp = rtsp_session_create("mjpeg/1", 8554);
-    media_stream_t *mjpeg = media_stream_mjpeg_create();
-    media_stream_t *pcma = media_stream_g711a_create(16000);
-    media_stream_t *l16 = media_stream_l16_create(16000);
-    rtsp_session_add_media_stream(rtsp, mjpeg);
-    rtsp_session_add_media_stream(rtsp, pcma);
+    media_stream_t *mjpeg = media_stream_mjpeg_create();//JPEG编码视频
+    media_stream_t *pcma = media_stream_g711a_create(16000);//G711a编码音频
+    media_stream_t *l16 = media_stream_l16_create(16000);//l16编码音频
+    rtsp_session_add_media_stream(rtsp, mjpeg);//添加视频
+    rtsp_session_add_media_stream(rtsp, l16);//添加音频
 
     while (true) {
 
@@ -112,17 +112,17 @@ static void rtsp_video()
         audio_last_frame = 0;
 
         while (1) {
-            int ret = rtsp_handle_requests(rtsp, 1);
-            if (-3 == ret) {
+            int ret = rtsp_handle_requests(rtsp, 1);//处理RTSP请求操作，包括options，describe，setup，play
+            if (-3 == ret) {//客户关闭套接字，退出
                 break;
             }
 
-            if (rtsp->state & 0x02) {
+            if (rtsp->state & 0x02) { //play
                 streamImage(mjpeg);
                 streamaudio(pcma);
             }
         }
-        rtsp_session_terminate(rtsp);
+        rtsp_session_terminate(rtsp);//关闭RTSP通信
 
         // rtsp_session_delete(rtsp);
     }

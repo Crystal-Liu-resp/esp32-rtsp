@@ -1,4 +1,5 @@
 
+//视频编码
 #include <stdio.h>
 #include <string.h>
 #include "rtp.h"
@@ -19,11 +20,12 @@ static const char *TAG = "rtp_mjpeg";
 
 static void media_stream_mjpeg_get_description(media_stream_t *stream, char *buf, uint32_t buf_len, uint16_t port)
 {
-    snprintf(buf, buf_len, "m=video %hu RTP/AVP %d", port, RTP_PT_JPEG);
+    snprintf(buf, buf_len, "m=video %hu RTP/AVP %d", port, RTP_PT_JPEG);//m=<媒体类型> <端口号> <传输协议> <媒体格式 >
 }
 
 static void media_stream_mjpeg_get_attribute(media_stream_t *stream, char *buf, uint32_t buf_len)
 {
+    //a=rtpmap:<媒体格式><编码格式>/<时钟频率>
     snprintf(buf, buf_len, "a=rtpmap:%d JPEG/90000", RTP_PT_JPEG);
 }
 
