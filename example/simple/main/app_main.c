@@ -102,7 +102,7 @@ static void rtsp_video()
     media_stream_t *pcma = media_stream_g711a_create(16000);//G711a编码音频
     media_stream_t *l16 = media_stream_l16_create(16000);//l16编码音频
     rtsp_session_add_media_stream(rtsp, mjpeg);//添加视频
-    rtsp_session_add_media_stream(rtsp, l16);//添加音频
+    rtsp_session_add_media_stream(rtsp, pcma);//添加音频
 
     while (true) {
 

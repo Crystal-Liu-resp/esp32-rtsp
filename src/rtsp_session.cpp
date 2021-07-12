@@ -124,15 +124,15 @@ static char *FindFirstCrlf(const char *str)
     return NULL;
 }
 
-/* 解析得到的请求信息的那一行（第一行）*/
-static bool ParseRequestLine(rtsp_session_t *session, const char *message)
+/* The line that parses the resulting request information (line 1)*/
+static int ParseRequestLine(rtsp_session_t *session, const char *message)
 {
     char method[32] = {0};
     char *url = session->url;
     char version[32] = {0};
 
     /*
-    * 参数个数不为3 
+    * The number of arguments is not 3.
     * method url vesion\r\n
     * 
     * 
@@ -196,41 +196,42 @@ static bool ParseRequestLine(rtsp_session_t *session, const char *message)
     }
 
     //url
-    if (strncmp(url, "rtsp://", 7) != 0) {//比前面7个字符
-        return true;
+    if (strncmp(url, "rtsp://", 7) != 0) {//7 characters more than the previous one
+        return 1;
     }
 
     // parse url；  url + 7：192.168.31.115:8554/live
-    // [^:]为m_ip，hu为port，s为url_suffix(后缀/字尾)
-    // [^:]表示读入：字符就结束读入
-    if (sscanf(url + 7, "%[^:]:%hu/%s", session->m_ip, &session->port, session->url_suffix) == 3) {
+    // [^:]is replaced by url_ip，hu is replaced by url_port
+    // [^:]represents that once read the ‘：‘，it ends reading
+    if (sscanf(url + 7, "%[^:]:%hu/%s", session->url_ip, &session->url_port, session->url_suffix) == 3) {
 
-    } else if (sscanf(url + 7, "%[^/]/%s", session->m_ip, session->url_suffix) == 2) {  //没有端口号数据就给个默认的端口号为554
-        session->port = 554;
+    } else if (sscanf(url + 7, "%[^/]/%s", session->url_ip, session->url_suffix) == 2) {
+        session->url_port = 554; // set to default port 554
     } else {
         return 1;
     }
+
     ESP_LOGD(TAG, "url:%s", session->url);
     ESP_LOGD(TAG, "url_suffix:%s", session->url_suffix);
     return 0;
 }
 
-/* 解析得到的头信息那一行（第二行） */
-static bool ParseHeadersLine(rtsp_session_t *session, const char *message)
-{   
+/* Parsing the resulting header line (line 2) */
+static int ParseHeadersLine(rtsp_session_t *session, const char *message)
+{ 
     /*
     CSeq: x\r\n
     */
     ESP_LOGD(TAG, "<%s>", message);
     char *TmpPtr = NULL;
-    TmpPtr = (char *)strstr(message, "CSeq: ");//在message中查找第一次出现"CSeq: "的位置（子字符串）
+    TmpPtr = (char *)strstr(message, "CSeq: ");//Find the location in message where "CSeq: "first appeared (substring)
     if (TmpPtr) {
-        session->m_CSeq  = atoi(TmpPtr + 6);//把参数 str 所指向的字符串转换为一个整数（类型为 int 型）
+        session->CSeq  = atoi(TmpPtr + 6);//Converts the string pointed to by STR to an integer of type int
         return 0;
     }
 
-    //解析第一行请求信息的时候决定的
-    if (session->m_RtspCmdType == RTSP_DESCRIBE || session->m_RtspCmdType == RTSP_SETUP || session->m_RtspCmdType == RTSP_PLAY) {
+    //session->method determined when parsing the first line of request information
+    if (session->method == RTSP_DESCRIBE || session->method == RTSP_SETUP || session->method == RTSP_PLAY) {
         // ParseAuthorization(message);
     }
 
@@ -239,8 +240,8 @@ static bool ParseHeadersLine(rtsp_session_t *session, const char *message)
     CSeq: 2\r\n
     \r\n
     */
-    if (session->m_RtspCmdType == RTSP_OPTIONS) {
-        session->state_ = ParseState_GotAll;
+    if (session->method == RTSP_OPTIONS) {
+        session->parse_state = PARSE_STATE_GOTALL;
         return 0;
     }
 
@@ -250,8 +251,8 @@ static bool ParseHeadersLine(rtsp_session_t *session, const char *message)
     Accept: application/sdp\r\n
     \r\n
     */
-    if (session->m_RtspCmdType == RTSP_DESCRIBE) {
-        session->state_ = ParseState_GotAll;
+    if (session->method == RTSP_DESCRIBE) {
+        session->parse_state = PARSE_STATE_GOTALL;
         return 0;
     }
 
@@ -261,7 +262,8 @@ static bool ParseHeadersLine(rtsp_session_t *session, const char *message)
     Transport: RTP/AVP;unicast;client_port=54492-54493\r\n
     \r\n
     */
-    if (session->m_RtspCmdType == RTSP_SETUP) {
+
+    if (session->method == RTSP_SETUP) {
         TmpPtr = (char *)strstr(message, "Transport");
         if (TmpPtr) { // parse transport header
             TmpPtr = (char *)strstr(TmpPtr, "RTP/AVP/TCP");
@@ -284,19 +286,22 @@ static bool ParseHeadersLine(rtsp_session_t *session, const char *message)
                 //client_port=54492-54493\r\n
                 ClientPortPtr = (char *)strstr(message, "client_port=");
             } else if (RTP_OVER_MULTICAST == session->transport_mode) {
-                //多播
+                //multicast
                 ClientPortPtr = (char *)strstr(message, "port=");
             }
             if (ClientPortPtr) {
-                //UDP端口占12个字符，多播占5个
+                //UDP ports are 12 characters long and multicast is 5 characters long
                 ClientPortPtr += (RTP_OVER_UDP == session->transport_mode) ? 12 : 5;
                 char cp[16] = {0};
-                //在参数 str 所指向的字符串中搜索第一次出现字符 c（一个无符号字符）的位置。
+                /*
+                 *Searches the string pointed to by the parameter STR 
+                 *for the first occurrence of the character c (an unsigned character).
+                 */
                 char *p = strchr(ClientPortPtr, '-');//54492-54493->-54493
-                if (p) { //UDP协议
-                    strncpy(cp, ClientPortPtr, p - ClientPortPtr);//第一个端口号拷贝
-                    session->m_ClientRTPPort  = atoi(cp); //转换为一个整数，即为RTP端口号
-                    session->m_ClientRTCPPort = session->m_ClientRTPPort + 1;//RTCP端口号是RTP+1
+                if (p) { //UDP
+                    strncpy(cp, ClientPortPtr, p - ClientPortPtr);//copy the first port number
+                    session->m_ClientRTPPort  = atoi(cp); //Convert to an integer, which is the RTP port number
+                    session->m_ClientRTCPPort = session->m_ClientRTPPort + 1;//RTCP port=RTP+1
                     ESP_LOGI(TAG, "rtsp client port %d-%d", session->m_ClientRTPPort, session->m_ClientRTCPPort);
                 } else {
                     return 1;
@@ -304,9 +309,8 @@ static bool ParseHeadersLine(rtsp_session_t *session, const char *message)
             }
 
             //Transport:RTP/AVP/TCP;unicast;interleaved=0-1
-            //没有对ClientPortPtr进行过操作
             if (RTP_OVER_TCP == session->transport_mode) {
-                TmpPtr = (char *)strstr(message, "interleaved=");//指向第一个字母i
+                TmpPtr = (char *)strstr(message, "interleaved=");//point to 'i'
                 if (TmpPtr) {
                     if (sscanf(TmpPtr += 12, "%hu-%hu", &session->rtp_channel, &session->rtcp_channel) == 2) {
                         ESP_LOGI(TAG, "RTP channel=%d, RTCP channel=%d", session->rtp_channel, session->rtcp_channel);
@@ -358,26 +362,25 @@ static int ParseRtspRequest(rtsp_session_t *session, const char *aRequest, uint3
     char *string = (char *)aRequest;
     char const *end = string + aRequestSize;
     while (string < end) {
-        switch (session->state_) {
-        case ParseState_RequestLine: {      //解析得到的请求那一行（第一行），返回bool值
-            char *firstCrlf = FindFirstCrlf((const char *)string);//找到第一个回车/换行符
+        switch (session->parse_state) {
+        case PARSE_STATE_REQUESTLINE: {//Parse the request line (the first line) and return an int value
+            char *firstCrlf = FindFirstCrlf((const char *)string);//Find the first enter/new line character
             if (firstCrlf != nullptr) {
-                firstCrlf[0] = '\0';//空字符
+                firstCrlf[0] = '\0';//null
                 ret = ParseRequestLine(session, string);
                 string = firstCrlf + 2;
             }
 
-            if (0 == ret) {     
-                session->state_ = ParseState_HeadersLine;
-            } else {                //和标准格式不一致的时候返回1
-                ESP_LOGE(TAG, "rtsp request parse failed");
+            if (0 == ret) {
+                session->parse_state = PARSE_STATE_HEADERSLINE;
+            } else {        //Returns 1 if it does not conform to the standard format
                 string = (char *)end;
                 ret = 1;
             }
         } break;
 
-        case ParseState_HeadersLine: {      //解析得到的请求那一行（第二行），返回bool值
-            char *firstCrlf = FindFirstCrlf((const char *)string);//找到第一个回车/换行符
+        case PARSE_STATE_HEADERSLINE: {//Parses the resulting request line (second line) and returns the int value
+            char *firstCrlf = FindFirstCrlf((const char *)string);//find the first enter/ new line character
             if (firstCrlf != nullptr) {
                 firstCrlf[0] = '\0';
                 ret = ParseHeadersLine(session, string);
@@ -442,44 +445,41 @@ static void Handle_RtspOPTION(rtsp_session_t *session, char *Response, uint32_t 
 }
 
 /*
-媒体级描述
+Media level description
 m=video 0 RTP/AVP 96\r\n
 a=rtpmap:96 H264/90000\r\n
 a=framerate:25\r\n
 a=control:track0\r\n
 
 m=video 0 RTP/AVP 96\r\n
-格式为 m=<媒体类型> <端口号> <传输协议> <媒体格式 >
-媒体类型：video
-端口号：0，为什么是0？因为上面在SETUP过程会告知端口号，所以这里就不需要了
-传输协议：RTP/AVP，表示RTP OVER UDP，如果是RTP/AVP/TCP，表示RTP OVER TCP
-媒体格式：表示负载类型(payload type)，一般使用96表示H.264
+format is m =< media type > < port number > < transport protocol > < media format >
+media type：video
+port number：0，The port number is told during the SETUP process, so it is not needed here
+transfer protocol：RTP/AVP，represents RTP OVER UDP，if RTP/AVP/TCP，represents RTP OVER TCP
+media format：represents payload type，
 a=rtpmap:96 H264/90000
-格式为a=rtpmap:<媒体格式><编码格式>/<时钟频率>
+format: a=rtpmap:<media format><Coding format>/<clock frequency>
 a=framerate:25
-表示帧率
-a=control:track0
-表示这路视频流在这个会话中的编号
+a=control:track0,Represents the number of the video stream in the session
 */
 static void GetSdpMessage(rtsp_session_t *session, char *buf, uint32_t buf_len, const char *session_name)
 {
 /*
-会话级描述
+session level description
 v=0\r\n
 o=- 91565340853 1 IN IP4 192.168.31.115\r\n
 t=0 0\r\n
 a=contol:*\r\n
 
-v=0
-表示sdp的版本
+v=0,represents the version of sdp
 o=- 91565340853 1 IN IP4 192.168.31.115
-格式为 o=<用户名> <会话id> <会话版本> <网络类型><地址类型> <地址>
-用户名：-
-会话id：91565340853，表示rtsp://192.168.31.115:8554/live请求中的live这个会话
-会话版本：1
-网络类型：IN，表示internet
-地址类型：IP4，表示ipv4
-地址：192.168.31.115，表示服务器的地址
+format: o=<username> <session id> <session version> <network type> <address type> <address>
+username：-
+session id：91565340853，Represents the live session in the rtsp://192.168.31.115:8554/live request.
+version type：1
+network type：IN，(internet)
+address type：IP4，(ipv4)
+address：192.168.31.115，(the address of the server)
 */
     snprintf(buf, buf_len,
              "v=0\r\n"

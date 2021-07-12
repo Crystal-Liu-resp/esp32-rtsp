@@ -45,7 +45,7 @@ int8_t MuLaw_Encode(int16_t number);
  */
 int16_t MuLaw_Decode(int8_t number);
 
-int8_t linear2alaw(int16_t pcm_val);
+int linear2alaw(int pcm_val);
 
 #ifdef __cplusplus
 }

@@ -1,4 +1,4 @@
-﻿//音频线性编码
+﻿//Audio linear coding
 #include <stdio.h>
 #include <string.h>
 #include "media_stream.h"
@@ -32,7 +32,7 @@ void media_stream_l16_get_attribute(media_stream_t *stream, char *buf, uint32_t 
     RTP_PT_L16_CH1, stream->sample_rate);
 }
 
-/* 发送RTP包 */
+/* Sending RTP packets */
 int media_stream_l16_send_frame(media_stream_t *stream, const uint8_t *data, uint32_t len)
 {
 

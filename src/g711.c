@@ -23,7 +23,6 @@
  * 2550 Garcia Avenue
  * Mountain View, California  94043
  */
-
 /*
  * g711.c
  *
@@ -40,15 +39,17 @@
  * bli@cpk.auc.dk
  *
  */
- 
-#define	SIGN_BIT	(0x80)		/* Sign bit for a A-law byte. */
-#define	QUANT_MASK	(0xf)		/* Quantization field mask. */
-#define	NSEGS		(8)		/* Number of A-law segments. */
-#define	SEG_SHIFT	(4)		/* Left shift for segment number. */
-#define	SEG_MASK	(0x70)		/* Segment field mask. */
+//audio coding
+#include "g711.h"
 
+#define SIGN_BIT    (0x80)      /* Sign bit for a A-law byte. */
+#define QUANT_MASK  (0xf)       /* Quantization field mask. */
+#define NSEGS       (8)     /* Number of A-law segments. */
+#define SEG_SHIFT   (4)     /* Left shift for segment number. */
+#define SEG_MASK    (0x70)      /* Segment field mask. */
 static int seg_aend[8] = {0x1F, 0x3F, 0x7F, 0xFF, 0x1FF, 0x3FF, 0x7FF, 0xFFF};  //alaw编码解码预制
 static int seg_uend[8] = {0x3F, 0x7F, 0xFF, 0x1FF, 0x3FF, 0x7FF, 0xFFF, 0x1FFF}; //ulaw编码解码预制
+
 
 /* copy from CCITT G.711 specifications */
 static const unsigned char u2a[128] = {			/* u- to A-law conversions */
@@ -94,8 +95,8 @@ static const unsigned char a2u[128] = {			/* A- to u-law conversions */
 	112,	113,	114,	115,	116,	117,	118,	119,
 	120,	121,	122,	123,	124,	125,	126,	127};
 
-//查找采样值对应哪一段折线
-// 该子程序寻找段落码
+//Find which polyline corresponds to the sampled value
+//find the Paragraph code
 static int search(
     int val,    /* changed from "short" *drago* */
     int    *table,
@@ -115,75 +116,83 @@ static int search(
  *
  * linear2alaw() accepts an 16-bit integer and encodes it as A-law data.
  *
- /*Linear Input CodeCompressed Code
- *---------------------------------------
- *0000000wxyza       000wxyz
- *0000001wxyza       001wxyz
- *000001wxyzab       010wxyz
- *00001wxyzabc       011wxyz
- *0001wxyzabcd       100wxyz
- *001wxyzabcde       101wxyz
- *01wxyzabcdef       110wxyz
- *1wxyzabcdefg       111wxyz
+ 
+ *		Linear Input Code	Compressed Code
+ *	------------------------	---------------
+ *	0000000wxyza			000wxyz
+ *	0000001wxyza			001wxyz
+ *	000001wxyzab			010wxyz
+ *	00001wxyzabc			011wxyz
+ *	0001wxyzabcd			100wxyz
+ *	001wxyzabcde			101wxyz
+ *	01wxyzabcdef			110wxyz
+ *	1wxyzabcdefg			111wxyz
  *
  * For further information see John C. Bellamy's Digital Telephony, 1982,
  * John Wiley & Sons, pps 98-111 and 472-476.
  * 
- * g711a输入的是13位（S16的高13位），这种格式是经过特别设计的，便于数字设备进行快速运算。
-1、取符号位并取反得到s
-2、获取强度位eee，获取方法如图所示
-3、获取高位样本位wxyz
-4、组合为seeewxyz，将seeewxyz逢偶数为取补数，编码完毕
+ * g711a input：13bits(the high 13bits of S16)，easy for fast calculations
 
-A-law如下表计算，第一列是采样点，共13bit，最高位为符号位。对于前两行，折线斜率均为1/2，跟负半段的相应区域位于同一段折线上，
-对于3到8行，斜率分别是1/4到1/128，共6段折线，加上负半段对应的6段折线，总共13段折线，这就是所谓的A-law十三段折线法。
+A-law is calculated in the following table, the first column is the sampling point, a total of 13 bits, 
+and the highest bit is the sign bit. For the first two rows, the slope of the polyline is both 1/2, 
+which is located on the same polyline as the corresponding area of ​​the negative half.
+For rows 3 to 8, the slope is from 1/4 to 1/128, a total of 6 polylines, 
+plus 6 polylines corresponding to the negative half, a total of 13 polylines, 
+this is the so-called A-law 13-segment polyline method .
 
-示例：
-输入pcm数据为1234，二进制对应为（0000 0100 1101 0010）
-      二进制变换下排列组合方式（0 00001 0011 010010）
-    1、获取符号位最高位为0，取反，s=1
-    2、获取强度位00001，查表，编码制应该是eee=011
-    3、获取高位样本wxyz=0011
-    4、组合为10110011，逢偶数为取反为11100110，得到E6
+Example：
+The input PCM data is 1234, and the binary corresponding is （0000 0100 1101 0010）
+      Permutation and Combination Mode under Binary Transformation（0 00001 0011 010010）
+    1、Take the sign bit (0) and negate it to get s=1
+    2、00001,look up the table， get the intensity bit eee=011
+    3、Get high sample bit wxyz=0011
+    4、The combination is seeewxyz=10110011， and the even number of seeewxyz is taken as complement=11100110，namely E6
  */
-int8_t linear2alaw(int16_t pcm_val)        /* 2's complement (16-bit range) */
+int linear2alaw(int	pcm_val)        /* 2's complement (16-bit range) */
 /* changed from "short" *drago* */
 {
     int     mask;   /* changed from "short" *drago* */
     int     seg;    /* changed from "short" *drago* */
     int     aval;
-
-    pcm_val = pcm_val >> 3;//这里右移3位，因为采样值是16bit，而A-law是13bit，存储在高13位上，低3位被舍弃
+	
+	/*
+	 *shifted 3 bits to the right, because the sample value is 16bit, and the A-law is 13bit, 
+	 *which is stored in the upper 13 bits, and the lower 3 bits are discarded
+	 */
+	pcm_val = pcm_val >> 3;
 
     if (pcm_val >= 0) {
-        mask = 0xD5;        /* sign (7th) bit = 1 二进制的11010101*/
+        mask = 0xD5;        /* sign (7th) bit = 1 */
     } else {
-        mask = 0x55;        /* sign bit = 0  二进制的01010101*/
-        pcm_val = -pcm_val - 1; //负数转换为正数计算
+        mask = 0x55;        /* sign bit = 0 */
+        pcm_val = -pcm_val - 1; //Conversion of negative numbers to positive calculations
     }
 
     /* Convert the scaled magnitude to segment number. */
-    seg = search(pcm_val, seg_aend, 8); //查找采样值对应alaw哪一段折线
+    seg = search(pcm_val, seg_aend, 8); //Find which polyline of the sampled value corresponds to alaw
 
     /* Combine the sign, segment, and quantization bits. */
 
-//以下按照表格第一二列进行处理，低4位是数据，5~7位是指数，最高位是符号
-// 将求取的符号位, 段落号, 段内量化值组成一个8比特数输出/
+/*
+ * The following is processed according to the first and second columns of the table, 
+ * the lower 4 bits are data, 5~7 bits are exponents, and the highest bit is sign.
+ * Combine the obtained sign bit, paragraph number, 
+ * and quantized value in the paragraph into an 8-bit number output.
+ */
     if (seg >= 8) {     /* out of range, return maximum value. */
         return (0x7F ^ mask);
     } else {
 
         aval = seg << SEG_SHIFT;
         if (seg < 2) {
-            aval |= (pcm_val >> 1) & QUANT_MASK;//对于前两行，折线斜率均为1/2
+            aval |= (pcm_val >> 1) & QUANT_MASK;//For the first two rows, the slope of the broken line is both 1/2.
         } else {
-            aval |= (pcm_val >> seg) & QUANT_MASK;//对于3到8行，斜率分别是1/4到1/128，共6段折线
+            aval |= (pcm_val >> seg) & QUANT_MASK;//For rows 3 to 8, the slopes are 1/4 to 1/128, and there are 6 polylines in total.
         }
         return (aval ^ mask);
     }
 }
 
- 
 /*
  * alaw2linear() - Convert an A-law value to 16-bit linear PCM
  *
@@ -303,16 +312,19 @@ int ulaw2linear( int	u_val)
 }
 
 /*
-输入pcm数据为1234
-    1、取得范围值，查表得 +2014 to +991 in 16 intervals of 64
-    2、得到基础值为0xA0
-    3、得到间隔数为64
-    4、得到区间基本值2014
-    5、当前值1234和区间基本值差异2014-1234=780
-    6、偏移值=780/间隔数=780/64，取整得到12
-    7、输出为0xA0+12=0xAC
+Input PCM data is 1234
+
+1. Obtain the range value, look up the table and get +2014 to +991 in 16 intervals of 64
+2. The base value is 0xA0
+3. The number of intervals is 64
+4. Obtain the basic value of the interval 2014
+5. The difference between the current value 1234 and the basic value of the interval 2014-1234=780
+6. Offset value =780/ interval number =780/64, rounded to get 12
+The output is 0xA0+12=0xAC
 */
-int8_t MuLaw_Encode(int16_t number)
+
+/* A-law to u-law conversion */
+static int alaw2ulaw (int	aval)
 {
 	aval &= 0xff;
 	return ((aval & 0x80) ? (0xFF ^ a2u[aval ^ 0xD5]) :
