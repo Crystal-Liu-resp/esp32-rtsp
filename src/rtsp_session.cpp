@@ -524,6 +524,22 @@ o=- 91565340853 1 IN IP4 192.168.31.115
     }
 }
 
+/*
+RTSP/1.0 200 OK\r\n
+CSeq: 3\r\n
+Content-length: 146\r\n
+Content-type: application/sdp\r\n
+\r\n
+
+v=0\r\n
+o=- 91565340853 1 in IP4 192.168.31.115\r\n
+t=0 0\r\n
+a=contol:*\r\n
+m=video 0 RTP/AVP 96\r\n
+a=rtpmap:96 H264/90000\r\n
+a=framerate:25\r\n
+a=control:track0\r\n
+*/
 static void Handle_RtspDESCRIBE(rtsp_session_t *session, char *Response, uint32_t *length)
 {
     char time_str[64];
@@ -550,6 +566,13 @@ static void Handle_RtspDESCRIBE(rtsp_session_t *session, char *Response, uint32_
     }
 }
 
+/*
+RTSP/1.0 200 OK\r\n
+CSeq: 4\r\n
+Transport: RTP/AVP;unicast;client_port=54492-54493;server_port=56400-56401\r\n
+Session: 66334873\r\n
+\r\n
+*/
 static void Handle_RtspSETUP(rtsp_session_t *session, char *Response, uint32_t *length)
 {
     int32_t trackID = 0;
@@ -606,6 +629,13 @@ static void Handle_RtspSETUP(rtsp_session_t *session, char *Response, uint32_t *
     }
 }
 
+/*
+RTSP/1.0 200 OK\r\n
+CSeq: 5\r\n
+Range: npt=0.000-\r\n
+Session: 66334873; timeout=60\r\n
+\r\n
+*/
 static void Handle_RtspPLAY(rtsp_session_t *session, char *Response, uint32_t *length)
 {
     char time_str[64];
