@@ -161,7 +161,7 @@ static int ParseRequestLine(rtsp_session_t *session, const char *message)
     Session: 66334873\r\n
     \r\n
     */
-    if (sscanf(message, "%s %s %s", method, url, version) != 3) {  //%s 占位符（method在第一个%s处）
+    if (sscanf(message, "%s %s %s", method, url, version) != 3) {  
         return true;
     }
 
@@ -450,7 +450,7 @@ m=video 0 RTP/AVP 96\r\n
 a=rtpmap:96 H264/90000\r\n
 a=framerate:25\r\n
 a=control:track0\r\n
-
+ 
 m=video 0 RTP/AVP 96\r\n
 format is m =< media type > < port number > < transport protocol > < media format >
 media type：video
@@ -478,7 +478,7 @@ username：-
 session id：91565340853，Represents the live session in the rtsp://192.168.31.115:8554/live request.
 version type：1
 network type：IN，(internet)
-address type：IP4，(ipv4)
+address type：IP4，(ipv4),
 address：192.168.31.115，(the address of the server)
 */
     snprintf(buf, buf_len,
