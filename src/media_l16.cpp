@@ -44,7 +44,7 @@ int media_stream_l16_send_frame(media_stream_t *stream, const uint8_t *data, uin
     int data_bytes_left = len;
     uint32_t offset = 0;
     while (data_bytes_left != 0) {
-        uint32_t curMsec = (uint32_t)(esp_timer_get_time() / 1000);
+        uint32_t curMsec = (uint32_t)(rtp_time_now_us() / 1000);
         if (stream->prevMsec == 0) { // first frame init our timestamp
             stream->prevMsec = curMsec;
         }

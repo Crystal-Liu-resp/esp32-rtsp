@@ -1,6 +1,7 @@
 
 #pragma once
 
+#include <sys/queue.h>
 #include "media_stream.h"
 #include "rtsp_utility.h"
 
@@ -42,7 +43,7 @@ typedef struct {
     char url_ip[20];
     parse_state_t parse_state;
     uint8_t state;
-    TaskHandle_t task_hdl;
+    // TaskHandle_t task_hdl;
 } rtsp_client_t;
 
 

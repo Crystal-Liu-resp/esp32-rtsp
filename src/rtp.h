@@ -63,7 +63,7 @@ typedef struct {
 rtp_session_t* rtp_session_create(rtp_session_info_t *session_info);
 
 void rtp_session_delete(rtp_session_t *session);
-
+uint64_t rtp_time_now_us(void);
 uint16_t rtp_GetRtpServerPort(rtp_session_t *session);
 
 uint16_t rtp_GetRtcpServerPort(rtp_session_t *session);

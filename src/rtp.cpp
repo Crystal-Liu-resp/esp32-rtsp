@@ -1,7 +1,7 @@
 
 #include <stdio.h>
 #include <string.h>
-#include "esp_log.h"
+#include <sys/time.h>
 #include "rtp.h"
 
 static const char *TAG = "RTP";
@@ -54,6 +54,20 @@ void rtp_session_delete(rtp_session_t *session)
 
     rtp_ReleaseUdpTransport(session);
     free(session);
+}
+
+uint64_t rtp_time_now_us(void)
+{
+// #if _POSIX_TIMERS
+#if 0
+    struct timespec ts_now;
+    clock_gettime(CLOCK_BOOTTIME, &ts_now);
+    return ((uint64_t)ts_now.tv_sec * 1000000L) + ((uint64_t)ts_now.tv_nsec / 1000);
+#else
+    struct timeval ts_now;
+    gettimeofday(&ts_now, NULL);
+    return ((uint64_t)ts_now.tv_sec * 1000000L) + ((uint64_t)ts_now.tv_usec);
+#endif
 }
 
 uint16_t rtp_GetRtpServerPort(rtp_session_t *session)

@@ -1,8 +1,6 @@
 
 #include <stdio.h>
 #include <string.h>
-#include "esp_log.h"
-#include "esp_timer.h"
 #include "rtsp_utility.h"
 
 static const char *TAG = "rtsp_utility";

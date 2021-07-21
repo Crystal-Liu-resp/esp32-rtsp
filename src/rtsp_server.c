@@ -1,9 +1,8 @@
 
 #include <stdio.h>
 #include <time.h>
-#include "esp_log.h"
 #include "rtsp_utility.h"
-#include "rtsp_session.h"
+#include "rtsp_server.h"
 
 static const char *TAG = "rtsp_server";
 
@@ -429,11 +428,11 @@ rtsp_session_t *rtsp_session_create(const char *url, uint16_t port)
     ServerAddr.sin_port        = htons(port); // listen on RTSP port
     session->MasterSocket      = socket(AF_INET, SOCK_STREAM, 0);
 
-    tcpip_adapter_ip_info_t if_ip_info;
-    char ip_str[64] = {0};
-    tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_STA, &if_ip_info);
-    sprintf(ip_str, "rtsp://%d.%d.%d.%d", IP2STR(&if_ip_info.ip));
-    ESP_LOGI(TAG, "Creating RTSP session [%s:%hu/%s]", ip_str, port, url);
+    // tcpip_adapter_ip_info_t if_ip_info;
+    // char ip_str[64] = {0};
+    // tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_STA, &if_ip_info);
+    // sprintf(ip_str, "rtsp://%d.%d.%d.%d", IP2STR(&if_ip_info.ip));
+    // ESP_LOGI(TAG, "Creating RTSP session [%s:%hu/%s]", ip_str, port, url);
 
     int enable = 1;
     if (setsockopt(session->MasterSocket, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0) {
