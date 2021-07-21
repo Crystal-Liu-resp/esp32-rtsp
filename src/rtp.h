@@ -68,6 +68,8 @@ uint16_t rtp_GetRtpServerPort(rtp_session_t *session);
 
 uint16_t rtp_GetRtcpServerPort(rtp_session_t *session);
 
+void rtp_set_rtp_port(rtp_session_t *session, uint16_t port);
+
 int rtp_send_packet(rtp_session_t *session, rtp_packet_t *packet);
 
 #ifdef __cplusplus

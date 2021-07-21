@@ -66,11 +66,16 @@ uint16_t rtp_GetRtcpServerPort(rtp_session_t *session)
     return session->RtcpServerPort;
 }
 
+void rtp_set_rtp_port(rtp_session_t *session, uint16_t port)
+{
+    session->session_info.rtp_port = port;
+}
+
 static int rtp_InitUdpTransport(rtp_session_t *session)
 {
     uint16_t P = 0;
-    #define UDP_PORT_MIN 6970
-    #define UDP_PORT_MAM 7000
+#define UDP_PORT_MIN 6970
+#define UDP_PORT_MAM 7000
 
     for (P = UDP_PORT_MIN; P < UDP_PORT_MAM; P += 2) {
         session->RtpSocket = udpsocketcreate(P);

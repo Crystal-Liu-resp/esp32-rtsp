@@ -27,7 +27,7 @@ static void media_stream_g711a_get_attribute(media_stream_t *stream, char *buf, 
 {
     snprintf(buf, buf_len, 
     "a=rtpmap:%d PCMA/%hu/1\r\n"
-    "a=framerate:100", // There should be no "\r\n" in the end
+    "a=framerate:10", // There should be no "\r\n" in the end
     RTP_PT_PCMA, stream->sample_rate);
 }
 
