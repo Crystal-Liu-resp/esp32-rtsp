@@ -102,14 +102,14 @@ const char *rtsp_get_status_from_code(uint32_t code)
  TEARDOWN          C->S             P,S        required
  */
 const rtsp_methods_t rtsp_methods[RTSP_UNKNOWN] = {
-    {RTSP_OPTIONS      , "OPTIONS"},
-    {RTSP_DESCRIBE     , "DESCRIBE"},
-    {RTSP_SETUP        , "SETUP"},
-    {RTSP_PLAY         , "PLAY"},
-    {RTSP_RECORD       , "RECORD"},
-    {RTSP_PAUSE        , "PAUSE"},
-    {RTSP_ANNOUNCE     , "ANNOUNCE"},
-    {RTSP_TEARDOWN     , "TEARDOWN"},
+    {RTSP_OPTIONS, "OPTIONS"},
+    {RTSP_DESCRIBE, "DESCRIBE"},
+    {RTSP_SETUP, "SETUP"},
+    {RTSP_PLAY, "PLAY"},
+    {RTSP_RECORD, "RECORD"},
+    {RTSP_PAUSE, "PAUSE"},
+    {RTSP_ANNOUNCE, "ANNOUNCE"},
+    {RTSP_TEARDOWN, "TEARDOWN"},
     {RTSP_GET_PARAMETER, "GET_PARAMETER"},
     {RTSP_SET_PARAMETER, "SET_PARAMETER"},
 };

@@ -43,10 +43,6 @@ ssize_t udpsocketsend(UDPSOCKET sockfd, const void *buf, size_t len, IPADDRESS d
 int socketread(SOCKET sock, char *buf, size_t buflen, int timeoutmsec);
 
 
-uint8_t *mem_swap32_copy(uint8_t *out, const uint8_t *in, uint32_t length);
-
-void mem_swap32(uint8_t *in, uint32_t length);
-
 #ifdef __cplusplus
 }
 #endif

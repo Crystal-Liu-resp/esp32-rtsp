@@ -12,7 +12,7 @@
 #include "esp_timer.h"
 #include "port-esp32.h"
 
-static const char *TAG = "glue esp32";
+static const char *TAG = "port-esp32";
 
 #define ERR_CHECK(a, str, ret_val)                       \
     if (!(a))                                                     \
@@ -27,16 +27,16 @@ static const char *TAG = "glue esp32";
 //     close(s);
 // }
 
-void socketpeeraddr(SOCKET s, IPADDRESS *addr, IPPORT *port) {
+void socketpeeraddr(SOCKET s, IPADDRESS *addr, IPPORT *port)
+{
 
     struct sockaddr_in r;
     socklen_t len = sizeof(r);
-    if(getpeername(s,(struct sockaddr*)&r,&len) < 0) {
+    if (getpeername(s, (struct sockaddr *)&r, &len) < 0) {
         printf("getpeername failed\n");
         *addr = 0;
         *port = 0;
-    }
-    else {
+    } else {
         //htons
 
         *port  = r.sin_port;
@@ -44,7 +44,8 @@ void socketpeeraddr(SOCKET s, IPADDRESS *addr, IPPORT *port) {
     }
 }
 
-void udpsocketclose(UDPSOCKET s) {
+void udpsocketclose(UDPSOCKET s)
+{
     printf("closing UDP socket\n");
     close(s);
 }
@@ -81,7 +82,7 @@ ssize_t socketsend(SOCKET sockfd, const void *buf, size_t len)
 }
 
 ssize_t udpsocketsend(UDPSOCKET sockfd, const void *buf, size_t len,
-                             IPADDRESS destaddr, IPPORT destport)
+                      IPADDRESS destaddr, IPPORT destport)
 {
     struct sockaddr_in addr;
 
@@ -89,7 +90,7 @@ ssize_t udpsocketsend(UDPSOCKET sockfd, const void *buf, size_t len,
     addr.sin_addr.s_addr = destaddr;
     addr.sin_port = htons(destport);
 
-    return sendto(sockfd, buf, len, 0, (struct sockaddr*)&addr, sizeof(addr));
+    return sendto(sockfd, buf, len, 0, (struct sockaddr *)&addr, sizeof(addr));
 }
 
 /**
@@ -105,52 +106,19 @@ int socketread(SOCKET sock, char *buf, size_t buflen, int timeoutmsec)
     tv.tv_usec = timeoutmsec * 1000; // send a new frame ever
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
 
-    int res = recv(sock,buf,buflen,0);
-    if(res > 0) {
+    int res = recv(sock, buf, buflen, 0);
+    if (res > 0) {
         return res;
-    }
-    else if(res == 0) {
+    } else if (res == 0) {
         return 0; // client dropped connection
-    }
-    else {
-        if (errno == EWOULDBLOCK || errno == EAGAIN)
+    } else {
+        if (errno == EWOULDBLOCK || errno == EAGAIN) {
             return -1;
-        else
-            return 0; // unknown error, just claim client dropped it
+        } else {
+            return 0;    // unknown error, just claim client dropped it
+        }
     };
 }
 
-
-uint8_t *mem_swap32_copy(uint8_t *out, const uint8_t *in, uint32_t length)
-{
-    if (length % 4) {
-        ESP_LOGE("glue-esp32", "length incorrect");
-        return out;
-    }
-    for (size_t i = 0; i < length; i += 4) {
-        out[i] = in[i + 3];
-        out[i + 1] = in[i + 2];
-        out[i + 2] = in[i + 1];
-        out[i + 3] = in[i];
-    }
-    return out + length;
-}
-
-void mem_swap32(uint8_t *in, uint32_t length)
-{
-    if (length % 4) {
-        ESP_LOGE("glue-esp32", "length incorrect");
-        return;
-    }
-    uint8_t m, n;
-    for (size_t i = 0; i < length; i += 4) {
-        m = in[i];
-        n = in[i + 1];
-        in[i] = in[i + 3];
-        in[i + 1] = in[i + 2];
-        in[i + 2] = n;
-        in[i + 3] = m;
-    }
-}
 
 #endif

@@ -3,9 +3,9 @@
 #include <string.h>
 #include "media_stream.h"
 #include "g711.h"
-#include "media_l16.h"
+#include "media_g711a.h"
 
-static const char *TAG = "rtp_l16";
+static const char *TAG = "rtp_g711a";
 
 #define RTP_CHECK(a, str, ret_val)                       \
     if (!(a))                                                     \
@@ -18,23 +18,23 @@ static const char *TAG = "rtp_l16";
  * https://datatracker.ietf.org/doc/html/rfc2327
  *
  */
-void media_stream_l16_get_description(media_stream_t *stream, char *buf, uint32_t buf_len, uint16_t port)
+static void media_stream_g711a_get_description(media_stream_t *stream, char *buf, uint32_t buf_len, uint16_t port)
 {
-    snprintf(buf, buf_len, "m=audio %hu RTP/AVP %d", port, RTP_PT_L16_CH1);
+    snprintf(buf, buf_len, "m=audio %hu RTP/AVP %d", port, RTP_PT_PCMA);
 }
 
-void media_stream_l16_get_attribute(media_stream_t *stream, char *buf, uint32_t buf_len)
+static void media_stream_g711a_get_attribute(media_stream_t *stream, char *buf, uint32_t buf_len)
 {
-    snprintf(buf, buf_len, 
-    "a=rtpmap:%d L16/%hu/1\r\n"
-    "a=framerate:100", // There should be no "\r\n" in the end
-    RTP_PT_L16_CH1, stream->sample_rate);
+    snprintf(buf, buf_len,
+             "a=rtpmap:%d PCMA/%hu/1\r\n"
+             "a=framerate:10", // There should be no "\r\n" in the end
+             RTP_PT_PCMA, stream->sample_rate);
 }
 
-int media_stream_l16_send_frame(media_stream_t *stream, const uint8_t *data, uint32_t len)
+static int media_stream_g711a_send_frame(media_stream_t *stream, const uint8_t *data, uint32_t len)
 {
 
-#define MAX_L16_PACKET_SIZE (MAX_RTP_PAYLOAD_SIZE - RTP_HEADER_SIZE - RTP_TCP_HEAD_SIZE)
+#define MAX_PCMA_PACKET_SIZE (MAX_RTP_PAYLOAD_SIZE - RTP_HEADER_SIZE - RTP_TCP_HEAD_SIZE)
 
     rtp_packet_t rtp_packet;
     rtp_packet.is_last = 0;
@@ -54,10 +54,10 @@ int media_stream_l16_send_frame(media_stream_t *stream, const uint8_t *data, uin
 
         uint8_t *p_buf = (uint8_t *)pcma_buf;
 
-        uint32_t fragmentLen = MAX_L16_PACKET_SIZE - (p_buf - pcma_buf);
+        uint32_t fragmentLen = MAX_PCMA_PACKET_SIZE - (p_buf - pcma_buf);
         if (fragmentLen >= data_bytes_left) {
             fragmentLen = data_bytes_left;
-            rtp_packet.is_last = 0; // RTP marker bit must be set on last fragment
+            rtp_packet.is_last = 1; // RTP marker bit must be set on last fragment
         }
 
         memcpy(p_buf, data + offset, fragmentLen);
@@ -67,16 +67,16 @@ int media_stream_l16_send_frame(media_stream_t *stream, const uint8_t *data, uin
 
         rtp_packet.size = p_buf - pcma_buf;
         rtp_packet.timestamp = stream->Timestamp;
-        rtp_packet.type = RTP_PT_L16_CH1;
+        rtp_packet.type = RTP_PT_PCMA;
         rtp_send_packet(stream->rtp_session, &rtp_packet);
 
         // Increment ONLY after a full frame
         stream->Timestamp += (stream->clock_rate * deltams / 1000);
     }
-    return true;
+    return 1;
 }
 
-static void media_stream_l16_delete(media_stream_t *stream)
+static void media_stream_g711a_delete(media_stream_t *stream)
 {
     if (NULL != stream->rtp_buffer) {
         free(stream->rtp_buffer);
@@ -84,7 +84,7 @@ static void media_stream_l16_delete(media_stream_t *stream)
     free(stream);
 }
 
-media_stream_t *media_stream_l16_create(uint16_t sample_rate)
+media_stream_t *media_stream_g711a_create(uint16_t sample_rate)
 {
     media_stream_t *stream = (media_stream_t *)calloc(1, sizeof(media_stream_t));
     RTP_CHECK(NULL != stream, "memory for g711a stream is not enough", NULL);
@@ -95,13 +95,13 @@ media_stream_t *media_stream_l16_create(uint16_t sample_rate)
         ESP_LOGE(TAG, "memory for media mjpeg buffer is insufficient");
         return NULL;
     }
-    stream->type = MEDIA_STREAM_L16; //TODO:
+    stream->type = MEDIA_STREAM_PCMA;
+    stream->clock_rate = 8000;
     stream->sample_rate = sample_rate;
-    stream->clock_rate = sample_rate;
-    stream->delete_media = media_stream_l16_delete;
-    stream->get_attribute = media_stream_l16_get_attribute;
-    stream->get_description = media_stream_l16_get_description;
-    stream->handle_frame = media_stream_l16_send_frame;
+    stream->delete_media = media_stream_g711a_delete;
+    stream->get_attribute = media_stream_g711a_get_attribute;
+    stream->get_description = media_stream_g711a_get_description;
+    stream->handle_frame = media_stream_g711a_send_frame;
     return stream;
 }
 

@@ -62,20 +62,20 @@ static const uint8_t *findJPEGheader(const uint8_t *start, const uint8_t *end, u
     return NULL;
 }
 
-static bool decodeJPEGfile(const uint8_t **start, uint32_t *len, const uint8_t **qtable0, const uint8_t **qtable1, uint16_t *width, uint16_t *height)
+static _Bool decodeJPEGfile(const uint8_t **start, uint32_t *len, const uint8_t **qtable0, const uint8_t **qtable1, uint16_t *width, uint16_t *height)
 {
     /**
      * JPEG format Reference:
      * https://en.wikipedia.org/wiki/JPEG_File_Interchange_Format
      * http://lad.dsc.ufcg.edu.br/multimidia/jpegmarker.pdf
      */
-    #define SOI  0xD8FF
-    #define EOI  0xD9FF
-    #define S0F0 0xC0FF
-    #define S0F2 0xC2FF
-    #define DHT  0xC4FF
-    #define DQT  0xDBFF
-    #define DRI  0xDDFF
+#define SOI  0xD8FF
+#define EOI  0xD9FF
+#define S0F0 0xC0FF
+#define S0F2 0xC2FF
+#define DHT  0xC4FF
+#define DQT  0xDBFF
+#define DRI  0xDDFF
     const uint8_t *end = *start + *len;
 
     // Look for quant tables if they are present
@@ -91,11 +91,11 @@ static bool decodeJPEGfile(const uint8_t **start, uint32_t *len, const uint8_t *
             p += length;
         } else {
             printf("can't read qtable1\n");
-            return false;
+            return 0;
         }
     } else {
         printf("can't read qtable0\n");
-        return false;
+        return 0;
     }
 
     p = findJPEGheader(p, end, S0F0);
@@ -104,10 +104,10 @@ static bool decodeJPEGfile(const uint8_t **start, uint32_t *len, const uint8_t *
         *width  = (p[7] << 8) | (p[8]);
     } else {
         printf("can't read iamge size\n");
-        return false;
+        return 0;
     }
 
-    return true;
+    return 1;
 }
 
 int media_stream_mjpeg_send_frame(media_stream_t *stream, const uint8_t *jpeg_data, uint32_t jpegLen)
@@ -201,9 +201,9 @@ static void media_stream_mjpeg_delete(media_stream_t *stream)
     free(stream);
 }
 
-media_stream_t* media_stream_mjpeg_create(void)
+media_stream_t *media_stream_mjpeg_create(void)
 {
-    media_stream_t *stream = (media_stream_t*)calloc(1, sizeof(media_stream_t));
+    media_stream_t *stream = (media_stream_t *)calloc(1, sizeof(media_stream_t));
     RTP_CHECK(NULL != stream, "memory for mjpeg stream is not enough", NULL);
 
     stream->rtp_buffer = (uint8_t *)malloc(MAX_RTP_PAYLOAD_SIZE);

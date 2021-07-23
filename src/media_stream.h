@@ -101,9 +101,9 @@ typedef enum {
     MEDIA_STREAM_PCMA,
     MEDIA_STREAM_PCMU,
     MEDIA_STREAM_L16,
-}media_stream_type_t;
+} media_stream_type_t;
 
-typedef struct media_stream_t{
+typedef struct media_stream_t {
     media_stream_type_t type;
     uint8_t *rtp_buffer;
     uint32_t prevMsec;

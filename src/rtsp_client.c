@@ -422,8 +422,7 @@ static int rtsp_handle_requests(rtsp_client_t *session, uint32_t readTimeoutMs)
 static void tcp_client_task(void *pvParameters)
 {
     rtsp_client_t *session = (rtsp_client_t *)pvParameters;
-    while (1)
-    {
+    while (1) {
         rtsp_handle_requests(session, 1000);
     }
 }
@@ -535,7 +534,7 @@ int rtsp_client_push_media(rtsp_client_t *session, transport_mode_t transport_mo
             .transport_mode = session->transport_mode,
             .socket_tcp = session->MasterSocket,
             .rtp_port = session->server_rtp_port,
-            .rtsp_channel = it->trackid*2,
+            .rtsp_channel = it->trackid * 2,
         };
         it->media_stream->rtp_session = rtp_session_create(&session_info);
         session->client_rtp_port = rtp_GetRtpServerPort(it->media_stream->rtp_session);

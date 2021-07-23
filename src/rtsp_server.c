@@ -164,14 +164,17 @@ static int ParseHeadersLine(rtsp_session_t *session, const char *message)
 
 static int ParseRtspRequest(rtsp_session_t *session, const char *aRequest, uint32_t aRequestSize)
 {
-    printf("[%s]\n", aRequest);
-    if (aRequestSize < 5) {
-        printf("[%x, %x, %x, %x, %x]\n", aRequest[0], aRequest[1], aRequest[2], aRequest[3], aRequest[4]);
-    }
-
-    if (aRequest[0] == '$') {
+    if (aRequest[0] == '$') { // magic number
+        ESP_LOGI(TAG, "RTCP recv");
         session->method = RTSP_UNKNOWN;
+        extern void rtcp_receive_parse(const uint8_t *buffer, uint32_t len);
+#if (__BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__)
+        mem_swap32(aRequest, aRequestSize);
+#endif
+        rtcp_receive_parse((const uint8_t *)aRequest + 4, aRequestSize - 4);
         return 0;
+    } else {
+        printf("[%s]\n", aRequest);
     }
 
     session->method = RTSP_UNKNOWN;
@@ -427,12 +430,6 @@ rtsp_session_t *rtsp_session_create(const char *url, uint16_t port)
     ServerAddr.sin_addr.s_addr = INADDR_ANY;
     ServerAddr.sin_port        = htons(port); // listen on RTSP port
     session->MasterSocket      = socket(AF_INET, SOCK_STREAM, 0);
-
-    // tcpip_adapter_ip_info_t if_ip_info;
-    // char ip_str[64] = {0};
-    // tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_STA, &if_ip_info);
-    // sprintf(ip_str, "rtsp://%d.%d.%d.%d", IP2STR(&if_ip_info.ip));
-    // ESP_LOGI(TAG, "Creating RTSP session [%s:%hu/%s]", ip_str, port, url);
 
     int enable = 1;
     if (setsockopt(session->MasterSocket, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0) {

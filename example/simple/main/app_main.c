@@ -10,12 +10,14 @@
 #include <sys/param.h>
 #include "esp_timer.h"
 #include "app_wifi.h"
-#include "rtsp_session.h"
+#include "rtsp_server.h"
 #include "media_mjpeg.h"
 #include "media_g711a.h"
 #include "media_l16.h"
 #include "g711.h"
 #include "frames.h"
+
+static const char *TAG = "esp32-main";
 
 char *wave_get(void);
 uint32_t wave_get_size(void);
@@ -97,6 +99,12 @@ static void streamaudio(media_stream_t *audio_stream)
 
 static void rtsp_video()
 {
+    tcpip_adapter_ip_info_t if_ip_info;
+    char ip_str[64] = {0};
+    tcpip_adapter_get_ip_info(TCPIP_ADAPTER_IF_STA, &if_ip_info);
+    sprintf(ip_str, "rtsp://%d.%d.%d.%d", IP2STR(&if_ip_info.ip));
+    ESP_LOGI(TAG, "Creating RTSP session [%s:%hu/%s]", ip_str, 8554, "mjpeg/1");
+
     rtsp_session_t *rtsp = rtsp_session_create("mjpeg/1", 8554);
     media_stream_t *mjpeg = media_stream_mjpeg_create();
     media_stream_t *pcma = media_stream_g711a_create(16000);

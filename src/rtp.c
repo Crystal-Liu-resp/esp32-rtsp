@@ -3,6 +3,7 @@
 #include <string.h>
 #include <sys/time.h>
 #include "rtp.h"
+#include <pthread.h>
 
 static const char *TAG = "RTP";
 
@@ -15,6 +16,43 @@ static const char *TAG = "RTP";
 
 static int rtp_InitUdpTransport(rtp_session_t *session);
 static void rtp_ReleaseUdpTransport(rtp_session_t *session);
+static void *rtcp_receive_task(void *args);
+
+void mem_swap32(uint8_t *in, uint32_t length)
+{
+    if (length % 4) {
+        ESP_LOGE(TAG, "length incorrect");
+        return;
+    }
+    uint8_t m, n;
+    for (size_t i = 0; i < length; i += 4) {
+        m = in[i];
+        n = in[i + 1];
+        in[i] = in[i + 3];
+        in[i + 1] = in[i + 2];
+        in[i + 2] = n;
+        in[i + 3] = m;
+    }
+}
+
+uint8_t *mem_swap32_copy(uint8_t *out, const uint8_t *in, uint32_t length)
+{
+    if (length % 4) {
+        ESP_LOGE("glue-esp32", "length incorrect");
+        return out;
+    }
+#if (__BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__)
+    for (size_t i = 0; i < length; i += 4) {
+        out[i] = in[i + 3];
+        out[i + 1] = in[i + 2];
+        out[i + 2] = in[i + 1];
+        out[i + 3] = in[i];
+    }
+#else
+    memcpy(out, in, length);
+#endif
+    return out + length;
+}
 
 rtp_session_t *rtp_session_create(rtp_session_info_t *session_info)
 {
@@ -42,6 +80,11 @@ rtp_session_t *rtp_session_create(rtp_session_info_t *session_info)
     session->rtphdr.seq = 0;
     session->rtphdr.ts = 0;
     session->rtphdr.ssrc = GET_RANDOM();
+    ESP_LOGI(TAG, "rtp sscr = %X", session->rtphdr.ssrc);
+
+    pthread_t new_thread = (pthread_t)NULL;
+    int res = pthread_create(&new_thread, NULL, rtcp_receive_task, (void *) session);
+
     return session;
 }
 
@@ -168,4 +211,79 @@ int rtp_send_packet(rtp_session_t *session, rtp_packet_t *packet)
     session->sn++;
 
     return ret;
+}
+
+void rtcp_receive_parse(const uint8_t *buffer, uint32_t len)
+{
+    printf("RTCP Received %d bytes [", len);
+    for (size_t i = 0; i < len; i++) {
+        printf("%x, ", buffer[i]);
+    }
+    printf("]\n");
+
+    uint32_t deal_len = 0;
+    while (deal_len < len) {
+        rtcp_common_t *rtsp_com = (rtcp_common_t *)buffer;
+        printf("pt=%d, len=%d\n", rtsp_com->pt, (rtsp_com->length + 1) * 4);
+
+        if (RTCP_RR == rtsp_com->pt) {
+            printf("sender ssrc=%X\n", *(uint32_t *)(buffer + 4));
+            rtcp_rr_t *rr = (rtcp_rr_t *)(buffer + 8);
+            printf("ssrc=%X\n", rr->ssrc);
+            printf("lost=%d\n", rr->lost);
+            printf("fraction=%d\n", rr->fraction);
+            printf("last_seq=%d\n", rr->last_seq);
+            printf("jitter=%d\n", rr->jitter);
+            printf("lsr=%d\n", rr->lsr);
+            printf("dlsr=%d\n", rr->dlsr);
+        } else if (RTCP_SR == rtsp_com->pt) {
+
+        } else if (RTCP_SDES == rtsp_com->pt) {
+
+        } else if (RTCP_BYE == rtsp_com->pt) {
+
+        } else if (RTCP_APP == rtsp_com->pt) {
+
+        } else {
+            ESP_LOGE(TAG, "Unknow RTCP packet");
+            return;
+        }
+        deal_len += (rtsp_com->length + 1) * 4;
+        buffer += deal_len;
+    }
+    if (deal_len != len) {
+        ESP_LOGE(TAG, "rtcp length incorrect");
+    }
+}
+
+static void *rtcp_receive_task(void *args)
+{
+    ESP_LOGI(TAG, "rtcp_receive_task");
+    rtp_session_t *session = (rtp_session_t *)args;
+
+    while (1) {
+        if (RTP_OVER_UDP == session->session_info.transport_mode) {
+            struct sockaddr_storage source_addr; // Large enough for both IPv4 or IPv6
+            socklen_t socklen = sizeof(source_addr);
+            int len = recvfrom(session->RtcpSocket, session->recv_buf, sizeof(session->recv_buf) - 1, 0, (struct sockaddr *)&source_addr, &socklen);
+            if (len < 0) {
+                ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
+                pthread_exit(NULL);
+            } else {
+#if (__BYTE_ORDER__==__ORDER_LITTLE_ENDIAN__)
+                mem_swap32(session->recv_buf, len);
+#endif
+                rtcp_receive_parse(session->recv_buf, len);
+
+                // int err = sendto(sock, rx_buffer, len, 0, (struct sockaddr *)&source_addr, sizeof(source_addr));
+                // if (err < 0) {
+                //     ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
+                //     break;
+                // }
+            }
+        } else if (RTP_OVER_TCP == session->session_info.transport_mode) {
+            ESP_LOGW(TAG, "rtsp over tcp not need this task");
+            pthread_exit(NULL);
+        }
+    }
 }
