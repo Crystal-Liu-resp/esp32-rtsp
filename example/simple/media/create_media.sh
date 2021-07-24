@@ -1,8 +1,24 @@
 #!/bin/bash
 set -e
 
+# crop video `ffmpeg  -i <videofile> -vf scale=320:-1 -r 25 -ss 00:00:00 -t 20 test.mp4`
+#
+
 FRAME_FILE="frames.h"
 WAVE_FILE="wave.c"
+
+
+clean()
+{
+  rm audio/wave.c video/frames.h
+  rm -r video/frames
+}
+
+if [ "clean" == "$1" ]; then
+    echo "clean ok"
+    clean
+    exit 0
+fi
 
 # generate video files
 cd video

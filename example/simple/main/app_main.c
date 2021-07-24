@@ -8,6 +8,7 @@
 #include <esp_system.h>
 #include <nvs_flash.h>
 #include <sys/param.h>
+#include <pthread.h>
 #include "esp_timer.h"
 #include "app_wifi.h"
 #include "rtsp_server.h"
@@ -30,7 +31,7 @@ static void streamImage(media_stream_t *mjpeg_stream)
     static uint32_t index = 0;
     static int64_t last_frame = 0;
     int64_t interval = (esp_timer_get_time() - last_frame) / 1000;
-    if (interval > 40) {
+     {
         printf("frame fps=%f\n", 1000.0f/(float)interval);
         uint8_t *p = g_frames[index][0];
         uint32_t len = g_frames[index][1] - g_frames[index][0];
@@ -38,6 +39,8 @@ static void streamImage(media_stream_t *mjpeg_stream)
         index++;
         if (index >= sizeof(g_frames)/8) {
             index = 0;
+            ESP_LOGW(TAG, "video over");
+            pthread_exit(NULL);
         }
 
         last_frame = esp_timer_get_time();
@@ -57,7 +60,7 @@ static void streamaudio(media_stream_t *audio_stream)
         audio_p = (uint8_t *)wave_get();
         return;
     }
-    if (interval > 100) {
+    {
         uint32_t len = 0;
         if (MEDIA_STREAM_PCMA == audio_stream->type) {
             len = interval * 32;
@@ -83,6 +86,8 @@ static void streamaudio(media_stream_t *audio_stream)
             if (audio_p + len >= audio_end) {
                 len = audio_end - audio_p;
                 audio_p = (uint8_t *)wave_get();
+                ESP_LOGW(TAG, "audeo over");
+                pthread_exit(NULL);
             }
             for (size_t i = 0; i < len / 2; i++) {
                 buffer[i * 2] = pcm[i] >> 8;
@@ -97,6 +102,39 @@ static void streamaudio(media_stream_t *audio_stream)
     }
 }
 
+media_stream_t *mjpeg;
+media_stream_t *pcma;
+media_stream_t *l16;
+
+
+static void *send_audio(void *args)
+{
+    rtsp_session_t *session = (rtsp_session_t *)args;
+    while (1) {
+        if (session->state & 0x02) {
+            streamaudio(l16);
+            vTaskDelay(pdMS_TO_TICKS(20));
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(5));
+        }
+    }
+    return NULL;
+}
+
+static void *send_video(void *args)
+{
+    rtsp_session_t *session = (rtsp_session_t *)args;
+    while (1) {
+        if (session->state & 0x02) {
+            streamImage(mjpeg);
+            vTaskDelay(pdMS_TO_TICKS(40));
+        } else {
+            vTaskDelay(pdMS_TO_TICKS(5));
+        }
+    }
+    return NULL;
+}
+
 static void rtsp_video()
 {
     tcpip_adapter_ip_info_t if_ip_info;
@@ -106,11 +144,11 @@ static void rtsp_video()
     ESP_LOGI(TAG, "Creating RTSP session [%s:%hu/%s]", ip_str, 8554, "mjpeg/1");
 
     rtsp_session_t *rtsp = rtsp_session_create("mjpeg/1", 8554);
-    media_stream_t *mjpeg = media_stream_mjpeg_create();
-    media_stream_t *pcma = media_stream_g711a_create(16000);
-    media_stream_t *l16 = media_stream_l16_create(16000);
+    mjpeg = media_stream_mjpeg_create();
+    pcma = media_stream_g711a_create(16000);
+    l16 = media_stream_l16_create(16000);
     rtsp_session_add_media_stream(rtsp, mjpeg);
-    rtsp_session_add_media_stream(rtsp, pcma);
+    rtsp_session_add_media_stream(rtsp, l16);
 
     while (true) {
 
@@ -119,16 +157,22 @@ static void rtsp_video()
         audio_end = (uint8_t *)wave_get() + wave_get_size();
         audio_last_frame = 0;
 
+        pthread_t new_thread = (pthread_t)NULL;
+        pthread_create(&new_thread, NULL, send_audio, (void *) rtsp);
+        pthread_t _thread = (pthread_t)NULL;
+        pthread_create(&_thread, NULL, send_video, (void *) rtsp);
+
         while (1) {
             int ret = rtsp_handle_requests(rtsp, 1);
             if (-3 == ret) {
                 break;
             }
+            vTaskDelay(pdMS_TO_TICKS(10));
 
-            if (rtsp->state & 0x02) {
-                streamImage(mjpeg);
-                streamaudio(pcma);
-            }
+            // if (rtsp->state & 0x02) {
+            //     streamImage(mjpeg);
+            //     streamaudio(pcma);
+            // }
         }
         rtsp_session_terminate(rtsp);
 
