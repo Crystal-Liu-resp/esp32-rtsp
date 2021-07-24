@@ -11,7 +11,11 @@ jobs:
       uses: actions/checkout@v2
       with:
         submodules: 'recursive'
-    - name: esp-idf build
+    - name: build simple
       uses: espressif/esp-idf-ci-action@latest
       with:
         path: 'example/simple'
+    - name: build pusher
+      uses: espressif/esp-idf-ci-action@latest
+      with:
+        path: 'example/pusher'
