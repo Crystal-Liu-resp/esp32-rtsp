@@ -44,3 +44,8 @@ This is a lightweight RTSP protocol library. It's easy to make a low-cost webcam
 
 ![video](test/video.jpg)
 
+## build for linux
+
+1. enter folder `example/linux`
+2. run command `./build.sh` to build and run
+
