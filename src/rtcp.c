@@ -74,6 +74,7 @@ static int rtp_seq_update(rtp_member *sender, uint16_t seq)
 	return 1;
 }
 
+//在member_list中找p,没找到p则创建p，并加入到list中
 rtp_member* rtp_member_fetch(rtp_session_t *session, uint32_t ssrc)
 {
 	rtp_member *p;
@@ -81,7 +82,7 @@ rtp_member* rtp_member_fetch(rtp_session_t *session, uint32_t ssrc)
 	if(!p)
 	{
 		// exist in sender list?
-		assert(!rtp_member_list_find(session->senders, ssrc));
+		assert(!rtp_member_list_find(session->senders, ssrc));//和上面的的没有重复？
 
 		p = rtp_member_create(ssrc);
 		if(p)
@@ -103,7 +104,7 @@ rtp_member* rtp_sender_fetch(rtp_session_t *session, uint32_t ssrc)
 {
 	rtp_member *p;
 	p = rtp_member_list_find(session->senders, ssrc);
-	if(!p)
+	if(!p)	//在member里面没找到p
 	{
 		p = rtp_member_fetch(session, ssrc);
 		if(p)

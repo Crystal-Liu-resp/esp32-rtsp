@@ -5,10 +5,11 @@
 
 #define N_SOURCE 2 // unicast(1S + 1R)
 
+//members大小固定为2，ptr不固定
 typedef struct 
 {
 	rtp_member *members[N_SOURCE];//1为sender,2为receiver
-	rtp_member **ptr;
+	rtp_member **ptr;//
 	int count;
 	int capacity;
 } rtp_member_list;

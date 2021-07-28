@@ -71,25 +71,25 @@ int rtp_member_list_add(void* members, rtp_member* s)
 	rtp_member_list *p;
 	p = (rtp_member_list *)members;
 
-	if(p->count >= N_SOURCE)//不止1S+1R
+	if(p->count >= N_SOURCE)//不止1S+1R，加到p->ptr中
 	{
-		if(p->count - N_SOURCE >= p->capacity)
+		if(p->count - N_SOURCE >= p->capacity)//超过capacity，重新分配内存空间
 		{
 			void* ptr;
-			ptr = (rtp_member **)realloc(p->ptr, (p->capacity+8)*sizeof(rtp_member*));
+			ptr = (rtp_member **)realloc(p->ptr, (p->capacity+8)*sizeof(rtp_member*));//重新分配内存， 8？？？
 			if(!ptr)
 				return ENOMEM;
 			p->ptr = ptr;
 			p->capacity += 8;
 		}
-		p->ptr[p->count - N_SOURCE] = s;
+		p->ptr[p->count - N_SOURCE] = s;//没超过capacity
 	}
-	else
+	else//将rtp_member* s加到list的members中，s是1S+1R之一
 	{
-		p->members[p->count] = s;//添加的是1S+1R
+		p->members[p->count] = s;
 	}
 
-	rtp_member_addref(s);
+	rtp_member_addref(s);//返回member存在member_list中的参考地址
 	p->count++;
 	return 0;
 }

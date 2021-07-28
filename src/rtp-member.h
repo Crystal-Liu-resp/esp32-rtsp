@@ -9,7 +9,7 @@
 
 typedef struct 
 {
-	int32_t ref;
+	int32_t ref;					//member存在member_list中的参考地址
 
 	uint32_t ssrc;					// ssrc == rtcp_sr.ssrc == rtcp_rb.ssrc
 	rtcp_sr_t rtcp_sr;

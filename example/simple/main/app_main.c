@@ -148,7 +148,7 @@ static void rtsp_video()
     pcma = media_stream_g711a_create(16000);
     l16 = media_stream_l16_create(16000);
     rtsp_session_add_media_stream(rtsp, mjpeg);
-    // rtsp_session_add_media_stream(rtsp, l16);
+    rtsp_session_add_media_stream(rtsp, l16);
 
     while (true) {
 

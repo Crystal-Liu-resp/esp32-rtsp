@@ -272,10 +272,10 @@ void rtcp_receive_parse(const uint8_t *buffer, uint32_t len)
 
     uint32_t deal_len = 0;
     while (deal_len < len) {
-        rtcp_hdr_t *rtsp_com = (rtcp_hdr_t *)buffer;
-        printf("pt=%d, len=%d\n", rtsp_com->pt, (rtsp_com->length + 1) * 4);
+        rtcp_hdr_t *rtsp_hdr = (rtcp_hdr_t *)buffer;
+        printf("pt=%d, len=%d\n", rtsp_hdr->pt, (rtsp_hdr->length + 1) * 4);
 
-        if (RTCP_RR == rtsp_com->pt) {
+        if (RTCP_RR == rtsp_hdr->pt) {
             printf("sender ssrc=%X\n", *(uint32_t *)(buffer + 4));
             rtcp_rr_t *rr = (rtcp_rr_t *)(buffer + 8);
             printf("ssrc=%X\n", rr->ssrc);
@@ -284,19 +284,19 @@ void rtcp_receive_parse(const uint8_t *buffer, uint32_t len)
             printf("jitter=%d\n", rr->rb->jitter);
             printf("lsr=%d\n", rr->rb->lsr);
             printf("dlsr=%d\n", rr->rb->dlsr);
-        } else if (RTCP_SR == rtsp_com->pt) {
+        } else if (RTCP_SR == rtsp_hdr->pt) {
 
-        } else if (RTCP_SDES == rtsp_com->pt) {
+        } else if (RTCP_SDES == rtsp_hdr->pt) {
 
-        } else if (RTCP_BYE == rtsp_com->pt) {
+        } else if (RTCP_BYE == rtsp_hdr->pt) {
 
-        } else if (RTCP_APP == rtsp_com->pt) {
+        } else if (RTCP_APP == rtsp_hdr->pt) {
 
         } else {
             ESP_LOGE(TAG, "Unknow RTCP packet");
             return;
         }
-        deal_len += (rtsp_com->length + 1) * 4;
+        deal_len += (rtsp_hdr->length + 1) * 4;
         buffer += deal_len;
     }
     if (deal_len != len) {
@@ -350,7 +350,7 @@ int rtcp_send_packet(rtp_session_t *session, uint8_t *buf, uint32_t length)
 
     //rtcphdr->count = packet->count;
 
-    rtcphdr->pt = RTCP_RR;//packet->type;
+    rtcphdr->pt = RTCP_SR;//packet->type;
     //rtcphdr->length = packet->size;
 
     switch(rtcphdr->pt)

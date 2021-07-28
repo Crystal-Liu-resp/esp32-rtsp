@@ -31,7 +31,7 @@ void media_stream_l16_get_attribute(media_stream_t *stream, char *buf, uint32_t 
              RTP_PT_L16_CH1, stream->sample_rate);
 }
 
-int media_stream_l16_SendRTCP(rtp_session_t *session , uint64_t *rtcp_clock, uint8_t *data, uint32_t len)
+int media_stream_l16_SendRTCP(rtp_session_t *session , uint64_t *rtcp_clock, /*uint8_t *data,*/ uint32_t len)
 {
 	// make sure have sent RTP packet
     struct timespec tp;
@@ -40,11 +40,11 @@ int media_stream_l16_SendRTCP(rtp_session_t *session , uint64_t *rtcp_clock, uin
 	int interval = rtp_rtcp_interval(session);
 	if(0 == rtcp_clock || rtcp_clock + interval < clock)
 	{
-		char rtcp[1024] = {0};
+		uint8_t rtcp[1024] = {0};
 		size_t n = rtp_rtcp_report(session, rtcp, sizeof(rtcp));
 
 		// send RTCP packet
-		rtcp_send_packet(&session, data, len);
+		rtcp_send_packet(&session, rtcp, len);
 
 		rtcp_clock = clock;
 	}
@@ -94,7 +94,7 @@ int media_stream_l16_send_frame(media_stream_t *stream, const uint8_t *data, uin
         /**
          * TODO:refactor RTCP sender!
          */
-        media_stream_l16_SendRTCP(stream->rtp_session ,rtcp_clock, stream->rtp_buffer, 1000);
+        media_stream_l16_SendRTCP(stream->rtp_session ,rtcp_clock, /*stream->rtp_buffer,*/ 1000);
         // Increment ONLY after a full frame
         stream->Timestamp += (stream->clock_rate * deltams / 1000);
     }
